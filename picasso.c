@@ -39,57 +39,59 @@ const char* color_to_string(color c)
 
 BMP *picasso_load_bmp(const char *filename)
 {
-        BMP *image = malloc(sizeof(BMP));
-        if (!image) {
-            fprintf(stderr, "Failed to allocate BMP struct\n");
-            return NULL;
-        }
-        memset(image, 0, sizeof(BMP));
-        BMP_file_header *fileHeader = &image->fh;
-        BMP_info_header *infoHeader = &image->ih;
+    BMP *image = canopy_malloc(sizeof(BMP));
+    if (!image) {
+        fprintf(stderr, "Failed to allocate BMP struct\n");
+        return NULL;
+    }
+    memset(image, 0, sizeof(BMP));
 
-        FILE *file = fopen(filename, "rb");
-        if (!file) {
-                perror("Unable to open file");
-                return NULL;
-        }
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Unable to open file");
+        canopy_free(image);
+        return NULL;
+    }
 
-        // Read file header
-        fread(fileHeader, sizeof(BMP_file_header), 1, file);
-        if (fileHeader->file_type != 0x4D42) {
-                printf("Not a valid BMP file\n");
-                fclose(file);
-                return NULL;
-        }
-
-        // Read info header
-        fread(infoHeader, sizeof(BMP_info_header), 1, file);
-
-        // Move file pointer to the beginning of bitmap data
-        fseek(file, fileHeader->offset_data, SEEK_SET);
-
-        // Allocate memory for the bitmap data
-        image->image_data = (uint8_t *)malloc(infoHeader->size_image);
-        if (!image->image_data) {
-                printf("Memory allocation failed\n");
-                fclose(file);
-                return NULL;
-        }
-
-        // Read the bitmap data
-        fread(image->image_data, infoHeader->size_image, 1, file);
-
+    // Read File Header
+    fread(&image->fh, sizeof(image->fh), 1, file);
+    if (image->fh.file_type != 0x4D42) {
+        fprintf(stderr, "Not a valid BMP file (magic: 0x%X)\n", image->fh.file_type);
         fclose(file);
+        canopy_free(image);
+        return NULL;
+    }
 
-        // Swap color channels since mac uses BGRA, not RGBA
-        for (int i = 0; i < infoHeader->width * infoHeader->height; ++i)
-        {
-                uint8_t temp                     = image->image_data[i * 4 + 0];  // Blue
-                image->image_data[i * 4 + 0]     = image->image_data[i * 4 + 2];  // Swap Red and Blue
-                image->image_data[i * 4 + 2]     = temp;                          // Assign Red to the original Blue
-        }
-        return image;
+    // Read Info Header
+    fread(&image->ih, sizeof(image->ih), 1, file);
+
+    // Move to pixel data
+    fseek(file, image->fh.offset_data, SEEK_SET);
+
+    // Allocate pixel data buffer
+    image->pixels = canopy_malloc(image->ih.size_image);
+    if (!image->pixels) {
+        fprintf(stderr, "Failed to allocate BMP pixel buffer\n");
+        fclose(file);
+        canopy_free(image);
+        return NULL;
+    }
+
+    // Read pixel data
+    fread(image->pixels, image->ih.size_image, 1, file);
+    fclose(file);
+
+    // Convert from BGRA to RGBA (macOS expects RGBA)
+    for (int i = 0; i < image->ih.width * image->ih.height; ++i) {
+        uint8_t *p = &image->pixels[i * 4];
+        uint8_t tmp = p[0];
+        p[0] = p[2];  // Swap B and R
+        p[2] = tmp;
+    }
+
+    return image;
 }
+
 void picasso_flip_buffer_vertical(uint8_t *buffer, int width, int height) {
     int bytes_per_pixel = 4; // RGBA
     int row_size = width * bytes_per_pixel;
@@ -143,6 +145,67 @@ defer:
 }
 
 
+// SPRITES
+
+picasso_sprite_sheet* picasso_create_sprite_sheet(
+    uint32_t* pixels,
+    int sheet_width,
+    int sheet_height,
+    int frame_width,
+    int frame_height,
+    int margin_x,
+    int margin_y,
+    int spacing_x,
+    int spacing_y)
+{
+    if (!pixels || frame_width <= 0 || frame_height <= 0) return NULL;
+
+    int cols = (sheet_width  - 2 * margin_x + spacing_x) / (frame_width + spacing_x);
+    int rows = (sheet_height - 2 * margin_y + spacing_y) / (frame_height + spacing_y);
+    int total = cols * rows;
+
+    picasso_sprite_sheet* sheet = canopy_malloc(sizeof(picasso_sprite_sheet));
+    if (!sheet) return NULL;
+
+    sheet->pixels         = pixels;
+    sheet->sheet_width    = sheet_width;
+    sheet->sheet_height   = sheet_height;
+    sheet->frame_width    = frame_width;
+    sheet->frame_height   = frame_height;
+    sheet->margin_x       = margin_x;
+    sheet->margin_y       = margin_y;
+    sheet->spacing_x      = spacing_x;
+    sheet->spacing_y      = spacing_y;
+    sheet->frames_per_row = cols;
+    sheet->frames_per_col = rows;
+    sheet->frame_count    = total;
+
+    sheet->frames = canopy_malloc(sizeof(picasso_sprite) * total);
+    if (!sheet->frames) {
+        canopy_free(sheet);
+        return NULL;
+    }
+
+    int i = 0;
+    for (int row = 0; row < rows; ++row) {
+        for (int col = 0; col < cols; ++col) {
+            int x = margin_x + col * (frame_width + spacing_x);
+            int y = margin_y + row * (frame_height + spacing_y);
+            sheet->frames[i++] = (picasso_sprite){ x, y, frame_width, frame_height };
+        }
+    }
+
+    return sheet;
+}
+
+void picasso_destroy_sprite_sheet(picasso_sprite_sheet* sheet)
+{
+    if (!sheet) return;
+    canopy_free(sheet->frames);
+    canopy_free(sheet);
+}
+
+
 void picasso_fill_canvas(color *pixels, size_t width, size_t height, color c)
 {
     DEBUG("color is %08x", color_to_u32(c));
@@ -151,34 +214,91 @@ void picasso_fill_canvas(color *pixels, size_t width, size_t height, color c)
     }
 }
 
-static inline uint32_t blend_pixel(uint32_t dst, uint32_t src) {
-    uint8_t sa = (src >> 24) & 0xFF;
-    if (sa == 255) return src;
-    if (sa == 0) return dst;
-
-    uint8_t sr = src & 0xFF;
-    uint8_t sg = (src >> 8) & 0xFF;
-    uint8_t sb = (src >> 16) & 0xFF;
-
-    uint8_t dr = dst & 0xFF;
-    uint8_t dg = (dst >> 8) & 0xFF;
-    uint8_t db = (dst >> 16) & 0xFF;
-
-    uint8_t r = (sr * sa + dr * (255 - sa)) / 255;
-    uint8_t g = (sg * sa + dg * (255 - sa)) / 255;
-    uint8_t b = (sb * sa + db * (255 - sa)) / 255;
-
-    return (0xFF << 24) | (b << 16) | (g << 8) | r;
+void picasso_destroy_backbuffer(picasso_backbuffer* bf)
+{
+    if (!bf) return;
+    if (bf->pixels) {
+        free(bf->pixels);
+        bf->pixels = NULL;
+    }
+    free(bf);
 }
 
-void canopy_raster_bitmap_ex(void* src_buf,
-                             int src_w,  int src_h,
-                             int dest_x, int dest_y,
-                             int dest_w, int dest_h,
-                             bool scale,
-                             bool blend,
-                             bool bilinear)
+void picasso_fill_backbuffer(picasso_backbuffer* bf, color c)
 {
+    if (!bf || !bf->pixels) return;
+    uint32_t color_val = color_to_u32(c);
+    int count = bf->width * bf->height;
+    for (int i = 0; i < count; ++i) {
+        bf->pixels[i] = color_val;
+    }
+}
+picasso_backbuffer* picasso_create_backbuffer(int width, int height)
+{
+    if (width <= 0 || height <= 0) {
+        return NULL;
+    }
 
+    picasso_backbuffer* bf = malloc(sizeof(picasso_backbuffer));
+    if (!bf) return NULL;
+
+    bf->width = width;
+    bf->height = height;
+    bf->pitch = width * sizeof(uint32_t); // 4 bytes per pixel
+    bf->pixels = calloc(width * height, sizeof(uint32_t));
+
+    if (!bf->pixels) {
+        free(bf);
+        return NULL;
+    }
+
+    return bf;
+}
+
+void picasso_blit_bitmap(picasso_backbuffer* dst,
+                         void* src_pixels, int src_w, int src_h,
+                         int x, int y)
+{
+    if (!dst || !src_pixels || !dst->pixels) return;
+
+    int dst_w = dst->width;
+    int dst_h = dst->height;
+
+    for (int row = 0; row < src_h; ++row)
+    {
+        int dst_y = y + row;
+        if (dst_y < 0 || dst_y >= dst_h) continue;
+
+        for (int col = 0; col < src_w; ++col)
+        {
+            int dst_x = x + col;
+            if (dst_x < 0 || dst_x >= dst_w) continue;
+
+            uint32_t* src = (uint32_t*)src_pixels;
+            uint32_t* dst_pixel = &dst->pixels[dst_y * dst->width + dst_x];
+            uint32_t  src_pixel = src[row * src_w + col];
+
+            *dst_pixel = src_pixel;
+        }
+    }
+}
+
+void* picasso_backbuffer_pixels(picasso_backbuffer* bf)
+{
+    if (!bf) return NULL;
+    return (void*)bf->pixels;
+}
+
+void picasso_clear_backbuffer(picasso_backbuffer* bf)
+{
+    if (!bf || !bf->pixels) {
+        WARN("Attempted to clear NULL backbuffer");
+        return;
+    }
+
+    size_t total_pixels = bf->width * bf->height;
+    for (size_t i = 0; i < total_pixels; ++i) {
+        bf->pixels[i] = 0x00000000;
+    }
 }
 
