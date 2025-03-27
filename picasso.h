@@ -12,34 +12,45 @@ typedef struct {
     uint8_t a;
 }color;
 
-// RBGA layout expected by Cocoa and NSBitmapImageRep
-// Primary Colors                     r     g     .b     a
-#define CANOPY_BLUE         ((color){0x00, 0x00, 0xFF, 0x50})
-#define CANOPY_GREEN        ((color){0x00, 0xFF, 0x00, 0xFF})
-#define CANOPY_RED          ((color){0xFF, 0x00, 0x00, 0xFF})
+// RGBA layout expected by Cocoa and NSBitmapImageRep
+// Primary Colors                      .r    .g    .b    .a
+#define BLUE         ((color){0x00, 0x00, 0xFF, 0x50})
+#define GREEN        ((color){0x00, 0xFF, 0x00, 0xFF})
+#define RED          ((color){0xFF, 0x00, 0x00, 0xFF})
 
 // Grayscale
-#define CANOPY_WHITE        ((color){0xFF, 0xFF, 0xFF, 0xFF})
-#define CANOPY_BLACK        ((color){0x00, 0x00, 0x00, 0xFF})
-#define CANOPY_GRAY         ((color){0x30, 0x30, 0x30, 0xFF})
-#define CANOPY_LIGHT_GRAY   ((color){0x80, 0x80, 0x80, 0xFF})
-#define CANOPY_DARK_GRAY    ((color){0x20, 0x20, 0x20, 0xFF})
+#define WHITE        ((color){0xFF, 0xFF, 0xFF, 0xFF})
+#define BLACK        ((color){0x00, 0x00, 0x00, 0xFF})
+#define GRAY         ((color){0x30, 0x30, 0x30, 0xFF})
+#define LIGHT_GRAY   ((color){0x80, 0x80, 0x80, 0xFF})
+#define DARK_GRAY    ((color){0x20, 0x20, 0x20, 0xFF})
 
 // Warm Tones
-#define CANOPY_ORANGE       ((color){0xFF, 0x80, 0x00, 0xFF})  // R: 255, G: 128, B: 0
-#define CANOPY_YELLOW       ((color){0xFF, 0xFF, 0x00, 0xFF})  // R: 255, G: 255, B: 0
-#define CANOPY_BROWN        ((color){0x80, 0x60, 0x20, 0xFF})  // R: 128, G: 96, B: 32
-#define CANOPY_GOLD         ((color){0xFF, 0xD7, 0x00, 0xFF})  // R: 255, G: 215, B: 0
+#define ORANGE       ((color){0xFF, 0x80, 0x00, 0xFF})  // R: 255, G: 128, B: 0
+#define YELLOW       ((color){0xFF, 0xFF, 0x00, 0xFF})  // R: 255, G: 255, B: 0
+#define BROWN        ((color){0x80, 0x60, 0x20, 0xFF})  // R: 128, G: 96, B: 32
+#define GOLD         ((color){0xFF, 0xD7, 0x00, 0xFF})  // R: 255, G: 215, B: 0
 
 // Cool Tones
-#define CANOPY_CYAN         ((color){0x00, 0xFF, 0xFF, 0xFF})  // R: 0, G: 255, B: 255
-#define CANOPY_MAGENTA      ((color){0xFF, 0x00, 0xFF, 0xFF})  // R: 255, G: 0, B: 255
-#define CANOPY_PURPLE       ((color){0x80, 0x00, 0x80, 0xFF})  // R: 128, G: 0, B: 128
-#define CANOPY_NAVY         ((color){0x00, 0x00, 0x80, 0xFF})  // R: 0, G: 0, B: 128
-#define CANOPY_TEAL         ((color){0x00, 0x80, 0x80, 0xFF})  // R: 0, G: 128, B: 128
+#define CYAN         ((color){0x00, 0xFF, 0xFF, 0xFF})  // R: 0, G: 255, B: 255
+#define MAGENTA      ((color){0xFF, 0x00, 0xFF, 0xFF})  // R: 255, G: 0, B: 255
+#define PURPLE       ((color){0x80, 0x00, 0x80, 0xFF})  // R: 128, G: 0, B: 128
+#define NAVY         ((color){0x00, 0x00, 0x80, 0xFF})  // R: 0, G: 0, B: 128
+#define TEAL         ((color){0x00, 0x80, 0x80, 0xFF})  // R: 0, G: 128, B: 128const char *color_to_string(color c);
 
+#define color_to_u32(c) (((uint32_t)(c).a << 24) | \
+                         ((uint32_t)(c).b << 16) | \
+                         ((uint32_t)(c).g << 8)  | \
+                         ((uint32_t)(c).r))
 
+#define u32_to_color(val) ((color){                      \
+    .a = (uint8_t)(((val) >> 24) & 0xFF),                \
+    .b = (uint8_t)(((val) >> 16) & 0xFF),                \
+    .g = (uint8_t)(((val) >> 8) & 0xFF),                 \
+    .r = (uint8_t)((val) & 0xFF)                         \
+})
 
+/*
 static inline uint32_t color_to_u32(color c) {
     return ((uint32_t)c.a << 24) |
            ((uint32_t)c.b << 16) |
@@ -55,6 +66,8 @@ static inline color u32_to_color(uint32_t val) {
         .r = val & 0xFF
     };
 }
+*/
+const char* color_to_string(color c);
 
 /* -------------------- Format Section -------------------- */
 

@@ -5,6 +5,38 @@
 
 #define return_defer(value) do { result = (value); goto defer; } while(0)
 
+const char* color_to_string(color c)
+{
+#define X(x) color_to_u32(x)
+
+    uint32_t value = X(c);
+    switch (value) {
+        case X(BLUE):        return "BLUE";
+        case X(GREEN):       return "GREEN";
+        case X(RED):         return "RED";
+
+        case X(WHITE):       return "WHITE";
+        case X(BLACK):       return "BLACK";
+        case X(GRAY):        return "GRAY";
+        case X(LIGHT_GRAY):  return "LIGHT_GRAY";
+        case X(DARK_GRAY):   return "DARK_GRAY";
+
+        case X(ORANGE):      return "ORANGE";
+        case X(YELLOW):      return "YELLOW";
+        case X(BROWN):       return "BROWN";
+        case X(GOLD):        return "GOLD";
+
+        case X(CYAN):        return "CYAN";
+        case X(MAGENTA):     return "MAGENTA";
+        case X(PURPLE):      return "PURPLE";
+        case X(NAVY):        return "NAVY";
+        case X(TEAL):        return "TEAL";
+
+        default: return "UNKNOWN";
+    }
+#undef X
+}
+
 BMP *picasso_load_bmp(const char *filename)
 {
         BMP *image = malloc(sizeof(BMP));
