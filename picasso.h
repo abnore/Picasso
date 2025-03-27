@@ -155,7 +155,7 @@ picasso_backbuffer* picasso_create_backbuffer(int width, int height);
 void picasso_destroy_backbuffer(picasso_backbuffer* bf);
 void picasso_clear_backbuffer(picasso_backbuffer* bf);
 void picasso_blit_backbuffer(picasso_backbuffer* dst, picasso_backbuffer* src, int x, int y);
-void picasso_blit_bitmap(picasso_backbuffer* dst, void* src_pixels, int src_w, int src_h, int x, int y, bool blend);
+void picasso_blit_bitmap(picasso_backbuffer* dst, void* src_pixels, int src_w, int src_h, int x, int y);
 void* picasso_backbuffer_pixels(picasso_backbuffer* bf);
 
 void picasso_fill_backbuffer(picasso_backbuffer* bf, color c);
