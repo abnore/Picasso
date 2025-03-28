@@ -116,33 +116,34 @@ PPM *picasso_load_ppm(const char *file_path)
 
 int picasso_save_to_ppm(PPM *image, const char *file_path)
 {
-	int result = 0;
-	FILE *f = NULL;
+    FILE *file = fopen(file_path, "wb");
+    if (!file) return errno;
 
-	{
-		f = fopen(file_path, "wb");
-		if (f == NULL) return_defer(errno);
+    // Write PPM header
+    if (fprintf(file, "P6\n%zu %zu\n255\n", image->width, image->height) < 0) {
+        fclose(file);
+        return errno;
+    }
 
-		fprintf(f, "P6\n%zu %zu 255\n", image->width, image->height);
-		if (ferror(f)) return_defer(errno);
+    // Write pixel data (RGB, skipping alpha)
+    for (size_t i = 0; i < image->width * image->height; i++) {
+        uint32_t pixel = image->pixels[i];
+        uint8_t rgb[3] = {
+            (pixel >> 0)  & 0xFF,  // Red
+            (pixel >> 8)  & 0xFF,  // Green
+            (pixel >> 16) & 0xFF   // Blue
+        };
 
-		for (size_t i = 0; i < image->width*image->height; i++) {
-			// 0xAABBGGRR - skipping alpha
-			uint32_t pixel = image->pixels[i];
-			uint8_t bytes[3] = {
-				(pixel>>(8*0)) & 0xFF, // Red
-				(pixel>>(8*1)) & 0xFF, // Green
-				(pixel>>(8*2)) & 0xFF  // Blue
-			};
-			fwrite(bytes, sizeof(bytes), 1, f);
-			if (ferror(f)) return_defer(errno);
-		}
-	}
+        if (fwrite(rgb, sizeof(rgb), 1, file) != 1) {
+            fclose(file);
+            return errno;
+        }
+    }
 
-defer:
-	if (f) fclose(f);
-	return result;
+    fclose(file);
+    return 0;
 }
+
 
 
 // SPRITES
