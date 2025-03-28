@@ -19,6 +19,17 @@ Originally created to work with the [Canopy](https://github.com/abnore/Canopy.gi
 
 ---
 
+##  Project Status
+
+Picasso is **actively under development** and part of a learning-oriented project.  
+It is stable enough for small-scale use, but the API is still evolving and subject to change.
+
+> [!WARNING]
+> Not production-ready. The API is not stable and may change frequently.
+
+> [!TIP]
+> Great for understanding pixel-level rendering and alpha blending in pure C!
+
 ## Features
 
 - Software rendering to a pixel buffer (backbuffer)
@@ -69,17 +80,6 @@ canopy_present_buffer(win);
 > [!NOTE]
 > Picasso is intentionally minimal and built for use with [Canopy](https://github.com/abnore/Canopy.git), but can be used standalone in other C projects.
 ---
-
-##  Project Status
-
-Picasso is **actively under development** and part of a learning-oriented project.  
-It is stable enough for small-scale use, but the API is still evolving and subject to change.
-
-> [!WARNING]
-> Not production-ready. The API is not stable and may change frequently.
-
-> [!TIP]
-> Great for understanding pixel-level rendering and alpha blending in pure C!
 
 ---
 
