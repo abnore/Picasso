@@ -1,9 +1,6 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/c0c37c0a-1533-4804-bf57-58c0759e9593" width="300" />
+  <img src="https://github.com/user-attachments/assets/1416e387-9f8c-4ff2-a9b4-498d779b20a9" width="300" />
 </p>
-
-<h1 align="center">Picasso</h1>
-
 <p align="center">
   <strong>Simple software rasterization library in C, designed for use with <a href="https://github.com/abnore/Canopy.git">Canopy</a> on macOS.</strong>
 </p>
