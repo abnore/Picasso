@@ -2,7 +2,29 @@
 #define PICASSO_H
 /* Will support BMP, PPM, PNG and eventually JPG
  * */
-#include "common.h"
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+/* -------------------- ICC Profile Support -------------------- */
+typedef enum {
+    PICASSO_PROFILE_NONE = 0,
+    PICASSO_PROFILE_ACESCG_LINEAR,
+    PICASSO_PROFILE_ADOBERGB1998,
+    PICASSO_PROFILE_DCI_P3_RGB,
+    PICASSO_PROFILE_DISPLAY_P3,
+    PICASSO_PROFILE_GENERIC_CMYK_PROFILE,
+    PICASSO_PROFILE_GENERIC_GRAY_GAMMA_2_2_PROFILE,
+    PICASSO_PROFILE_GENERIC_GRAY_PROFILE,
+    PICASSO_PROFILE_GENERIC_LAB_PROFILE,
+    PICASSO_PROFILE_GENERIC_RGB_PROFILE,
+    PICASSO_PROFILE_GENERIC_XYZ_PROFILE,
+    PICASSO_PROFILE_ITU_2020,
+    PICASSO_PROFILE_ITU_709,
+    PICASSO_PROFILE_ROMM_RGB,
+    PICASSO_PROFILE_SRGB,
+} picasso_icc_profile;
+
 /* -------------------- Utility macros -------------------- */
 
 #define PICASSO_ABS(a)     ({ __typeof__(a) _a = (a); _a > 0 ? _a : -_a; })
@@ -65,6 +87,9 @@ const char* color_to_string(color c);
 // Define BMP file header structures
 #pragma pack(push,1) //https://www.ibm.com/docs/no/zos/2.4.0?topic=descriptions-pragma-pack
 
+//BITMAPV4HEADER up to v5 fields
+//BITMAPV5HEADER after that
+//https://en.wikipedia.org/wiki/BMP_file_format#Usage_of_BMP_format
 typedef struct {
     struct {
         uint16_t file_type;                 // File type always ascii `BM` which is 0x4D42
@@ -74,17 +99,33 @@ typedef struct {
         uint32_t offset_data;               // Start position of pixel data (bytes from the beginning of the file)
     } fh;                                   // .fh = file header
     struct {
-        uint32_t size;                      // Size of this header (in bytes)
-        int32_t width;                      // width of bitmap in pixels
-        int32_t height;                     // width of bitmap in pixels
-        uint16_t planes;                    // No. of planes for the target device, this is always 1
-        uint16_t bit_count;                 // No. of bits per pixel
-        uint32_t compression;               // 0 or 3 - uncompressed (BI_RGB)
-        uint32_t size_image;                // 0 - for uncompressed images
+        uint32_t size;               // Must be 108
+        int32_t width;
+        int32_t height;
+        uint16_t planes;
+        uint16_t bit_count;
+        uint32_t compression;
+        uint32_t size_image;
         int32_t x_pixels_per_meter;
         int32_t y_pixels_per_meter;
-        uint32_t colors_used;               // No. color indexes in the color table. Use 0 for the max number of colors allowed by bitCount
-        uint32_t colors_important;          // No. of colors used for displaying the bitmap. If 0 all colors are required
+        uint32_t colors_used;
+        uint32_t colors_important;
+
+        // V4 fields
+        uint32_t red_mask;
+        uint32_t green_mask;
+        uint32_t blue_mask;
+        uint32_t alpha_mask;
+        uint32_t cs_type;
+        int32_t endpoints[9];        // Unused (XYZ triples for color space)
+        uint32_t gamma_red;
+        uint32_t gamma_green;
+        uint32_t gamma_blue;
+        // V5 additions
+        uint32_t intent;
+        uint32_t profile_data;
+        uint32_t profile_size;
+        uint32_t reserved;
     } ih;                                   // .ih = info header
     uint8_t *pixels;
 }BMP;
@@ -103,10 +144,12 @@ typedef struct {
 
 #pragma pack(pop)
 
+/// @brief BMP functions
 BMP *picasso_load_bmp(const char *filename);
-int picasso_save_to_bmp(BMP *image, const char *filename);
-void picasso_flip_buffer_vertical(uint8_t *buffer, int width, int height);
+int picasso_save_to_bmp(BMP *image, const char *file_path, picasso_icc_profile profile);
+BMP *picasso_create_bmp_from_rgba(int width, int height, const uint8_t *pixel_data);
 
+/// @brief PPM functions
 PPM *picasso_load_ppm(const char *filename);
 int picasso_save_to_ppm(PPM *image, const char *file_path);
 
