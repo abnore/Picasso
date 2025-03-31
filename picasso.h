@@ -3,6 +3,12 @@
 /* Will support BMP, PPM, PNG and eventually JPG
  * */
 #include "common.h"
+/* -------------------- Utility macros -------------------- */
+
+#define PICASSO_ABS(a)     ({ __typeof__(a) _a = (a); _a > 0 ? _a : -_a; })
+#define PICASSO_MAX(a,b)   ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a > _b ? _a : _b; })
+#define PICASSO_MIN(a,b)   ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a < _b ? _a : _b; })
+
 /* -------------------- Color Section -------------------- */
 
 typedef struct {
@@ -12,6 +18,8 @@ typedef struct {
     uint8_t a;
 }color;
 
+// Transparent black
+#define CLEAR_BACKGROUND ((color){0x00, 0x00, 0x00, 0x00})
 // RGBA layout expected by Cocoa and NSBitmapImageRep
 // Primary Colors              .r    .g    .b    .a
 #define BLUE         ((color){0x00, 0x00, 0xFF, 0xFF})
@@ -141,23 +149,22 @@ picasso_sprite_sheet* picasso_create_sprite_sheet( uint32_t* pixels, int sheet_w
 
 typedef struct {
     uint32_t* pixels;
-    int width;
-    int height;
-    int pitch;
-    union {
-        uint32_t reserved;
-        color placeholder_color;
-    };
-
+    uint32_t width, height, pitch;
 } picasso_backbuffer;
 
 picasso_backbuffer* picasso_create_backbuffer(int width, int height);
-void picasso_destroy_backbuffer(picasso_backbuffer* bf);
-void picasso_clear_backbuffer(picasso_backbuffer* bf);
-void picasso_blit_backbuffer(picasso_backbuffer* dst, picasso_backbuffer* src, int x, int y);
-void picasso_blit_bitmap(picasso_backbuffer* dst, void* src_pixels, int src_w, int src_h, int x, int y);
-void* picasso_backbuffer_pixels(picasso_backbuffer* bf);
+void picasso_destroy_backbuffer(picasso_backbuffer *bf);
+void picasso_clear_backbuffer(picasso_backbuffer *bf);
+void picasso_blit_bitmap(picasso_backbuffer *dst, void *src_pixels, int src_w, int src_h, int x, int y);
+void* picasso_backbuffer_pixels(picasso_backbuffer *bf);
 
-void picasso_fill_backbuffer(picasso_backbuffer* bf, color c);
+/* -------------------- Graphical Raster Section -------------------- */
+typedef struct {
+    int x, y, width, height; // supporting negative values
+} picasso_rect;
+
+void picasso_fill_rect(picasso_backbuffer *bf, picasso_rect *r, color c);
+void picasso_draw_rect(picasso_backbuffer *bf, picasso_rect *r, color c);
+void picasso_draw_line(picasso_backbuffer *bf, int x0, int y0, int x1, int y1, color c);
 
 #endif // PICASSO_H

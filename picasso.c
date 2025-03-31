@@ -116,34 +116,33 @@ PPM *picasso_load_ppm(const char *file_path)
 
 int picasso_save_to_ppm(PPM *image, const char *file_path)
 {
-    FILE *file = fopen(file_path, "wb");
-    if (!file) return errno;
+	int result = 0;
+	FILE *f = NULL;
 
-    // Write PPM header
-    if (fprintf(file, "P6\n%zu %zu\n255\n", image->width, image->height) < 0) {
-        fclose(file);
-        return errno;
-    }
+	{
+		f = fopen(file_path, "wb");
+		if (f == NULL) return_defer(errno);
 
-    // Write pixel data (RGB, skipping alpha)
-    for (size_t i = 0; i < image->width * image->height; i++) {
-        uint32_t pixel = image->pixels[i];
-        uint8_t rgb[3] = {
-            (pixel >> 0)  & 0xFF,  // Red
-            (pixel >> 8)  & 0xFF,  // Green
-            (pixel >> 16) & 0xFF   // Blue
-        };
+		fprintf(f, "P6\n%zu %zu 255\n", image->width, image->height);
+		if (ferror(f)) return_defer(errno);
 
-        if (fwrite(rgb, sizeof(rgb), 1, file) != 1) {
-            fclose(file);
-            return errno;
-        }
-    }
+		for (size_t i = 0; i < image->width*image->height; i++) {
+			// 0xAABBGGRR - skipping alpha
+			uint32_t pixel = image->pixels[i];
+			uint8_t bytes[3] = {
+				(pixel>>(8*0)) & 0xFF, // Red
+				(pixel>>(8*1)) & 0xFF, // Green
+				(pixel>>(8*2)) & 0xFF  // Blue
+			};
+			fwrite(bytes, sizeof(bytes), 1, f);
+			if (ferror(f)) return_defer(errno);
+		}
+	}
 
-    fclose(file);
-    return 0;
+defer:
+	if (f) fclose(f);
+	return result;
 }
-
 
 
 // SPRITES
@@ -207,32 +206,34 @@ void picasso_destroy_sprite_sheet(picasso_sprite_sheet* sheet)
 }
 
 
-void picasso_fill_canvas(color *pixels, size_t width, size_t height, color c)
-{
-    DEBUG("color is %08x", color_to_u32(c));
-    for(int i = 0; i < width*height; ++i){
-        pixels[i] = c;
-    }
-}
 
-void picasso_destroy_backbuffer(picasso_backbuffer* bf)
-{
-    if (!bf) return;
-    if (bf->pixels) {
-        free(bf->pixels);
-        bf->pixels = NULL;
-    }
-    free(bf);
-}
+// --------------------------------------------------------
+// Graphical functions
+// --------------------------------------------------------
 
-void picasso_fill_backbuffer(picasso_backbuffer* bf, color c)
+// --------------------------------------------------------
+// Backbuffer operations
+// --------------------------------------------------------
+
+static inline uint32_t blend_pixel(uint32_t dst, uint32_t src)
 {
-    if (!bf || !bf->pixels) return;
-    uint32_t color_val = color_to_u32(c);
-    int count = bf->width * bf->height;
-    for (int i = 0; i < count; ++i) {
-        bf->pixels[i] = color_val;
-    }
+    uint8_t sa = (src >> 24) & 0xFF;
+    if (sa == 255) return src;
+    if (sa == 0) return dst;
+
+    uint8_t sr = src & 0xFF;
+    uint8_t sg = (src >> 8) & 0xFF;
+    uint8_t sb = (src >> 16) & 0xFF;
+
+    uint8_t dr = dst & 0xFF;
+    uint8_t dg = (dst >> 8) & 0xFF;
+    uint8_t db = (dst >> 16) & 0xFF;
+
+    uint8_t r = (sr * sa + dr * (255 - sa)) / 255;
+    uint8_t g = (sg * sa + dg * (255 - sa)) / 255;
+    uint8_t b = (sb * sa + db * (255 - sa)) / 255;
+
+    return (0xFF << 24) | (b << 16) | (g << 8) | r;
 }
 picasso_backbuffer* picasso_create_backbuffer(int width, int height)
 {
@@ -254,6 +255,16 @@ picasso_backbuffer* picasso_create_backbuffer(int width, int height)
     }
 
     return bf;
+}
+
+void picasso_destroy_backbuffer(picasso_backbuffer* bf)
+{
+    if (!bf) return;
+    if (bf->pixels) {
+        free(bf->pixels);
+        bf->pixels = NULL;
+    }
+    free(bf);
 }
 
 void picasso_blit_bitmap(picasso_backbuffer* dst,
@@ -279,7 +290,7 @@ void picasso_blit_bitmap(picasso_backbuffer* dst,
             uint32_t* dst_pixel = &dst->pixels[dst_y * dst->width + dst_x];
             uint32_t  src_pixel = src[row * src_w + col];
 
-            *dst_pixel = src_pixel;
+            *dst_pixel = blend_pixel(*dst_pixel, src_pixel);
         }
     }
 }
@@ -297,9 +308,71 @@ void picasso_clear_backbuffer(picasso_backbuffer* bf)
         return;
     }
 
-    size_t total_pixels = bf->width * bf->height;
-    for (size_t i = 0; i < total_pixels; ++i) {
-        bf->pixels[i] = 0x00000000;
+    for (size_t i = 0; i <  bf->width * bf->height; ++i) {
+        bf->pixels[i] = color_to_u32(CLEAR_BACKGROUND);
     }
 }
 
+// --------------------------------------------------------
+// Graphical primitives
+// --------------------------------------------------------
+
+void picasso_fill_rect(picasso_backbuffer *bf, picasso_rect *r, color c)
+{
+    if(!bf || !r)
+    {
+        ERROR("No buffer to draw on, or no initial settings given");
+        return;
+    }
+    //Normalize the rect to support negative drawing
+
+    if(r->width < 0) {
+        r->width = PICASSO_ABS(r->width);
+        r->x -= r->width;
+    }
+
+    if(r->height < 0) {
+        r->height = PICASSO_ABS(r->height);
+        r->y -= r->height;
+    }
+    uint32_t new_pixel = color_to_u32(c);
+
+    // Bounds checking
+    int start_x = r->x;
+    int start_y = r->y;
+    int end_x   = r->x + r->width;
+    int end_y   = r->y + r->height;
+
+    // Clamping to framebuffer dimensions
+    if( start_x < 0 )           start_x = 0;
+    if( start_y < 0 )           start_y = 0;
+    if( end_x   > bf->width )   end_x = bf->width;
+    if( end_y   > bf->height )  end_y = bf->height;
+
+    for(int y = start_y; y < end_y; ++y){
+        for(int x = start_x; x < end_x; ++x){
+            uint32_t *cur_pixel = &(bf->pixels[ y * bf->width + x ]);
+            *cur_pixel = blend_pixel(*cur_pixel, new_pixel);
+        }
+    }
+}
+
+void picasso_draw_line(picasso_backbuffer *bf, int x0, int y0, int x1, int y1, color c)
+{
+    uint32_t new_pixel = color_to_u32(c);
+
+    /* Bresenhams lines algorithm
+     * */
+    int dx = x1-x0;
+    int dy = y1-y0;
+    int D = 2*dy-dx;
+    int y = y0;
+    for(int i = x0; i < x1; ++i){
+        bf->pixels[y*bf->width + i] = new_pixel;
+        if (D > 0) {
+            y++;
+            D -= 2*dx;
+        }
+        D += 2*dy;
+    }
+}
