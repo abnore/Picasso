@@ -6,6 +6,31 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/* -------------------- Image Object -------------------- */
+typedef struct {
+    int width;
+    int height;
+    int channels; // 3 = RGB, 4 = RGBA
+    uint8_t *pixels;
+} picasso_image;
+
+/* -------------------- Custom Allocators -------------------- */
+void* picasso_calloc(size_t count, size_t size);
+void picasso_free(void *ptr);
+void *picasso_malloc(size_t size);
+void * picasso_realloc(void *ptr, size_t size);
+
+/* --------- Binary Readers little endian utilities ----------- */
+uint8_t picasso_read_u8(const uint8_t *p);
+uint16_t picasso_read_u16_le(const uint8_t *p);
+uint32_t picasso_read_u32_le(const uint8_t *p);
+int32_t  picasso_read_s32_le(const uint8_t *p);
+
+/* -------------------- File Support -------------------- */
+void *picasso_read_entire_file(const char *path, size_t *out_size);
+int picasso_write_file(const char *path, const void *data, size_t size);
+
+
 /* -------------------- ICC Profile Support -------------------- */
 typedef enum {
     PICASSO_PROFILE_NONE = 0,
