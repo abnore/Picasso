@@ -330,16 +330,43 @@ void picasso_destroy_sprite_sheet(picasso_sprite_sheet* sheet)
 }
 
 
+// --------------------------------------------------------
+// Graphical functions and utilities
+// --------------------------------------------------------
+/* Here we are supporting negative width and height, drawing
+ * in all directions! */
+static void picasso__normalize_rect(picasso_rect *r)
+{
+    if(!r) {WARN("Tried to normalize a NULL object");return;}
+    if (r->width < 0) {
+        r->x += r->width;
+        r->width = -r->width;
+    }
+    if (r->height < 0) {
+        r->y += r->height;
+        r->height = -r->height;
+    }
+}
+/* Creating the bounds for looping over, removing the logic from the draw functions */
+static bool picasso__clip_rect_to_bounds(picasso_backbuffer *bf, const picasso_rect *r,
+                                 picasso_draw_bounds *db)
+{
+    if (!r || r->width == 0 || r->height == 0)
+        return false;
 
-// --------------------------------------------------------
-// Graphical functions
-// --------------------------------------------------------
+    if (r->x >= (int)bf->width || r->y >= (int)bf->height ||
+        r->x + r->width <= 0 || r->y + r->height <= 0)
+        return false;
 
-// --------------------------------------------------------
-// Backbuffer operations
-// --------------------------------------------------------
+    db->x0 = (r->x > 0) ? r->x : 0;
+    db->y0 = (r->y > 0) ? r->y : 0;
+    db->x1 = (r->x + r->width < bf->width) ? r->x + r->width : bf->width;
+    db->y1 = (r->y + r->height < bf->height) ? r->y + r->height : bf->height;
 
-static inline uint32_t blend_pixel(uint32_t dst, uint32_t src)
+    return true;
+}
+
+static inline uint32_t picasso__blend_pixel(uint32_t dst, uint32_t src)
 {
     uint8_t sa = (src >> 24) & 0xFF;
     if (sa == 255) return src;
@@ -359,6 +386,11 @@ static inline uint32_t blend_pixel(uint32_t dst, uint32_t src)
 
     return (0xFF << 24) | (b << 16) | (g << 8) | r;
 }
+// --------------------------------------------------------
+// Backbuffer operations
+// --------------------------------------------------------
+
+
 picasso_backbuffer* picasso_create_backbuffer(int width, int height)
 {
     if (width <= 0 || height <= 0) {
@@ -414,7 +446,7 @@ void picasso_blit_bitmap(picasso_backbuffer* dst,
             uint32_t* dst_pixel = &dst->pixels[dst_y * dst->width + dst_x];
             uint32_t  src_pixel = src[row * src_w + col];
 
-            *dst_pixel = blend_pixel(*dst_pixel, src_pixel);
+            *dst_pixel = picasso__blend_pixel(*dst_pixel, src_pixel);
         }
     }
 }
@@ -443,44 +475,116 @@ void picasso_clear_backbuffer(picasso_backbuffer* bf)
 
 void picasso_fill_rect(picasso_backbuffer *bf, picasso_rect *r, color c)
 {
-    if(!bf || !r)
-    {
-        ERROR("No buffer to draw on, or no initial settings given");
-        return;
-    }
-    //Normalize the rect to support negative drawing
+    picasso_draw_bounds bounds = {0};
+    picasso__normalize_rect(r);
+    if(!picasso__clip_rect_to_bounds(bf, r, &bounds)) return;
 
-    if(r->width < 0) {
-        r->width = PICASSO_ABS(r->width);
-        r->x -= r->width;
-    }
-
-    if(r->height < 0) {
-        r->height = PICASSO_ABS(r->height);
-        r->y -= r->height;
-    }
     uint32_t new_pixel = color_to_u32(c);
 
-    // Bounds checking
-    int start_x = r->x;
-    int start_y = r->y;
-    int end_x   = r->x + r->width;
-    int end_y   = r->y + r->height;
-
-    // Clamping to framebuffer dimensions
-    if( start_x < 0 )           start_x = 0;
-    if( start_y < 0 )           start_y = 0;
-    if (end_x > (int)bf->width)   end_x = (int)bf->width;
-    if (end_y > (int)bf->height)  end_y = (int)bf->height;
-
-    for(int y = start_y; y < end_y; ++y){
-        for(int x = start_x; x < end_x; ++x){
-            uint32_t *cur_pixel = &(bf->pixels[ y * bf->width + x ]);
-            *cur_pixel = blend_pixel(*cur_pixel, new_pixel);
+    for (int y = bounds.y0; y < bounds.y1; ++y) {
+        for (int x = bounds.x0; x < bounds.x1; ++x) {
+            uint32_t *cur_pixel = &bf->pixels[y * bf->width + x];
+            *cur_pixel = picasso__blend_pixel(*cur_pixel, new_pixel);
         }
     }
 }
 
+/* This approach might be slightly wasteful, but it works! */
+void picasso_draw_rect(picasso_backbuffer *bf, picasso_rect *outer, int thickness, color c)
+{
+    if (!outer || !bf || thickness <= 0) return;
+
+    picasso_draw_bounds outer_bounds = {0};
+    picasso_draw_bounds inner_bounds = {0};
+
+    // Normalize original rectangle (respecting negative width/height)
+    picasso__normalize_rect(outer);
+
+    // Compute inner rectangle
+    picasso_rect inner = {
+        .x = outer->x + thickness,
+        .y = outer->y + thickness,
+        .width = outer->width - 2 * thickness,
+        .height = outer->height - 2 * thickness
+    };
+
+    // Clip to draw bounds
+    if (!picasso__clip_rect_to_bounds(bf, outer, &outer_bounds)) return;
+
+    if (!picasso__clip_rect_to_bounds(bf, &inner, &inner_bounds)) {
+        inner_bounds = (picasso_draw_bounds){0};
+    }
+
+    uint32_t new_pixel = color_to_u32(c);
+
+    for (int y = outer_bounds.y0; y < outer_bounds.y1; ++y) {
+        for (int x = outer_bounds.x0; x < outer_bounds.x1; ++x) {
+
+            bool inside_inner = (
+                    y >= inner_bounds.y0 && y < inner_bounds.y1 &&
+                    x >= inner_bounds.x0 && x < inner_bounds.x1
+                    );
+
+            if (inside_inner) continue;
+            else {
+                uint32_t *cur_pixel = &bf->pixels[y * bf->width + x];
+                *cur_pixel = picasso__blend_pixel(*cur_pixel, new_pixel);
+            }
+        }
+    }
+}
+
+void picasso_fill_circle(picasso_backbuffer *bf, int x0, int y0, int radius, color c)
+{
+    picasso_draw_bounds bounds = {0};
+    picasso_rect circle_box = {
+        .x = x0-radius, .y = y0-radius,
+        .height = radius*2,
+        .width = radius*2
+    };
+    if(!picasso__clip_rect_to_bounds(bf, &circle_box, &bounds)) return;
+    uint32_t new_pixel = color_to_u32(c);
+    // a^2 + b^2 = c^2
+    for (int y = bounds.y0; y < bounds.y1 + 2; ++y) {
+        for (int x = bounds.x0; x < bounds.x1 + 2; ++x) {
+            int dx = x - x0;
+            int dy = y - y0;
+            if((dx*dx + dy*dy <= radius*radius + radius)){
+                uint32_t *cur_pixel = &bf->pixels[y * bf->width + x];
+                *cur_pixel = picasso__blend_pixel(*cur_pixel, new_pixel);
+            }
+        }
+    }
+}
+void picasso_draw_circle(picasso_backbuffer *bf, int x0, int y0, int radius,int thickness, color c)
+{
+    picasso_draw_bounds bounds = {0};
+    picasso_rect circle_box = {
+        .x = x0 - radius, .y = y0 - radius,
+        .width = radius * 2,
+        .height = radius * 2
+    };
+
+    if (!picasso__clip_rect_to_bounds(bf, &circle_box, &bounds)) return;
+
+    uint32_t new_pixel = color_to_u32(c);
+
+    int outer = radius * radius;
+    int inner = (radius - thickness) * (radius - thickness);
+
+    for (int y = bounds.y0; y < bounds.y1 + 2; ++y) {
+        for (int x = bounds.x0; x < bounds.x1 + 2; ++x) {
+            int dx = x - x0;
+            int dy = y - y0;
+            int dist2 = dx * dx + dy * dy;
+
+            if (dist2 >= inner+radius && dist2 <= outer+radius) {
+                uint32_t *cur_pixel = &bf->pixels[y * bf->width + x];
+                *cur_pixel = picasso__blend_pixel(*cur_pixel, new_pixel);
+            }
+        }
+    }
+}
 void picasso_draw_line(picasso_backbuffer *bf, int x0, int y0, int x1, int y1, color c)
 {
     uint32_t new_pixel = color_to_u32(c);
