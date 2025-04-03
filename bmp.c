@@ -1,12 +1,23 @@
-
+#include <stdbool.h>
+#include <string.h>
+#include "picasso.h"
+#include "logger.h"
 #include "picasso_icc_profiles.h"
-enum bmp_header_type {
-    BMP_HEADER_UNKNOWN = 0,
-    BMP_HEADER_CORE = 12,
-    BMP_HEADER_INFO = 40,
-    BMP_HEADER_V4  = 108,
-    BMP_HEADER_V5  = 124
-};
+
+typedef enum {
+    BITMAPCOREHEADER   = 12,  // OS/2 1.x — rarely used but stb supports it
+    BITMAPINFOHEADER   = 40,  // Most common, basic 24/32-bit BMPs
+    BITMAPV4HEADER     = 108, // Adds color space and gamma (optional)
+    BITMAPV5HEADER     = 124  // Adds ICC profile (optional)
+} bmp_header_size;
+
+typedef enum {
+    LCS_sRGB = 0x73524742, // Standard sRGB color space ('sRGB' in little-endian) â€” this is the most common.
+    LCS_WINDOWS_COLOR_SPACE = 0x57696E20, // Native Windows color space ('Win ' in little-endian)
+    PROFILE_EMBEDDED = 0x4D424544, // Custom ICC profile embedded in file ('DEBM' / 'MBED' in little-endian)
+    PROFILE_LINKED = 0x4C494E4B, // ICC profile is in an external file ('LINK')
+} bmp_cs_type;
+
 static const char *picasso_icc_profile_name(picasso_icc_profile profile) {
     switch (profile) {
         case PICASSO_PROFILE_NONE: return "None";
@@ -27,6 +38,7 @@ static const char *picasso_icc_profile_name(picasso_icc_profile profile) {
         default: return "Unknown";
     }
 }
+
 static bool picasso_embed_icc_profile(BMP *image, picasso_icc_profile profile, FILE *out)
 {
     const uint8_t *icc_data = NULL;
@@ -80,62 +92,6 @@ static void picasso_flip_buffer_vertical(uint8_t *buffer, int width, int height)
 
     TRACE("Finished vertical flip");
 }
-
-static uint32_t picasso_bmp_get_header_size(const uint8_t *buffer, size_t size) {
-    if (size < 18) return 0; // 14-byte file header + 4 bytes of DIB header size
-    return picasso_read_u32_le(&buffer[14]);
-}
-static bool picasso_bmp_validate_header(uint16_t planes, uint16_t bpp, uint32_t compression)
-{
-    if (planes != 1) { // Never anything else
-        WARN("Invalid BMP: planes must be 1");
-        return false;
-    }
-
-    /*
-     * 1 monochrome, 4 16 colors, 8 256 colors, 16 high color, 24 true color RGB
-     * 32 RGBA or BGRX
-     */
-    if (bpp != 24) {
-        WARN("Unsupported BMP: only 24-bit supported for now (got %hu)", bpp);
-        return false;
-    }
-
-    /*
-     * Compression: 0 = BI_RGB (none), 1 = RLE8, 2 = RLE4,
-     * 3 = BI_BITFIELDS, 4 = JPEG, 5 = PNG
-     */
-    if (compression != 0) {
-        WARN("Unsupported BMP compression (expected 0, got %u)", compression);
-        return false;
-    }
-
-    return true;
-}
-picasso_image *bmp_load_from_file(const char *filename)
-{
-    size_t size;
-    uint8_t *buffer = picasso_read_entire_file(filepath, &size);
-    uint32_t header_size = picasso_bmp_get_header_size(buffer, size);
-    if (header_size != BMP_HEADER_INFO) {
-        WARN("only supporting BITMAPINFOHEADER for now");
-        picasso_free(buffer);
-        return NULL;
-    }
-    const uint8_t *dib = buffer + 14;
-    int32_t width  = picasso_read_s32_le(dib + 4);
-    int32_t height = picasso_read_s32_le(dib + 8);
-    uint16_t planes = picasso_read_u16_le(dib + 12);
-	uint16_t bpp = picasso_read_u16_le(dib +14);
-	uint32_t compression = picasso_read_u32_le(dib +16);
-
-    if (!picasso_bmp_validate_header(planes, bpp, compression)) {
-    picasso_free(buffer);
-    return NULL;
-}
-}
-
-
 
 BMP *picasso_load_bmp(const char *filename)
 {
@@ -379,4 +335,109 @@ BMP *picasso_create_bmp_from_rgba(int width, int height, const uint8_t *pixel_da
     TRACE("Created BMP from RGBA (%dx%d) using BITMAPV4HEADER", width, height);
 
     return bmp;
+}
+
+char * _print_cs_type( bmp_cs_type type)
+{
+    switch(type) {
+        case LCS_sRGB: // = 0x73524742, // Standard sRGB color space ('sRGB' in little-endian) â€” this is the most common.
+            return "LCS_sRBG = 0x73524742";
+            break;
+        case LCS_WINDOWS_COLOR_SPACE: // = 0x57696E20, // Native Windows color space ('Win ' in little-endian)
+            return "LCS_WINDOWS_COLOR_SPACE = 0x57696E20";
+            break;
+        case PROFILE_EMBEDDED: // = 0x4D424544, // Custom ICC profile embedded in file ('DEBM' / 'MBED' in little-endian)
+            return "PROFILE_EMBEDDED = 0x4D424544";
+            break;
+        case PROFILE_LINKED: // = 0x4C494E4B, // ICC profile is in an external file ('LINK')
+            return "PROFILE_LINKED = 0x4C494E4B";
+            break;
+        default:
+            break;
+    }
+}
+void _print_header_type(bmp_header_size type)
+{
+    switch(type) {
+        case BITMAPCOREHEADER:
+            TRACE("bitmapcoreheader");
+            break;
+        case BITMAPINFOHEADER:
+            TRACE("bitmapinfoheader");
+            break;
+        case BITMAPV4HEADER:
+            TRACE("bitmapv4header");
+            break;
+        case BITMAPV5HEADER:
+            TRACE("bitmapv5header");
+            break;
+        default:
+            TRACE("Not supported");
+            break;
+    }
+}
+
+picasso_image *bmp_load_from_file(const char *filename)
+{
+    BMP bmp = {0};
+    size_t fh_size = sizeof(bmp.fh);
+    TRACE("bmp.fh size %zu", fh_size);
+
+    FILE *fp = fopen(filename, "rb");
+    size_t read = fread(&bmp.fh,1, sizeof(bmp.fh), fp);
+    TRACE("read so far %zu bytes", read);
+
+    TRACE("file type %04x", bmp.fh.file_type);
+    TRACE("file size %i", bmp.fh.file_size);
+    TRACE("reserved %08x", bmp.fh.reserved1+bmp.fh.reserved2);
+    TRACE("file type %i", bmp.fh.offset_data);
+
+    /* So far so good, 4D42 is BMP, fileside is next, two blanks and offset to data*/
+    read += fread(&bmp.ih.size,1, sizeof(uint32_t), fp);
+
+    TRACE("read so far %zu bytes", read);
+    TRACE("size is %i", bmp.ih.size);
+    _print_header_type(bmp.ih.size);
+    size_t left_to_read = bmp.fh.offset_data - read;
+    TRACE("read %u - %zu = %zu more bytes", bmp.fh.offset_data, read,
+            left_to_read);
+    read += fread(((uint8_t*)&bmp.ih) + 4, 1, left_to_read, fp);
+
+    TRACE("width              = %d", bmp.ih.width);
+    TRACE("height             = %d", bmp.ih.height);
+    TRACE("bpp                = %d", bmp.ih.bit_count);
+    TRACE("compression        = %u", bmp.ih.compression);
+    TRACE("size_image         = %u", bmp.ih.size_image);
+    TRACE("x_pixels_per_meter = %d", bmp.ih.x_pixels_per_meter);
+    TRACE("y_pixels_per_meter = %d", bmp.ih.y_pixels_per_meter);
+    TRACE("colors_used        = %u", bmp.ih.colors_used);
+    TRACE("colors_important   = %u", bmp.ih.colors_important);
+
+    // V4 color masks
+    TRACE("red_mask           = 0x%08X", bmp.ih.red_mask);
+    TRACE("green_mask         = 0x%08X", bmp.ih.green_mask);
+    TRACE("blue_mask          = 0x%08X", bmp.ih.blue_mask);
+    TRACE("alpha_mask         = 0x%08X", bmp.ih.alpha_mask);
+
+    // Color space type
+    TRACE("cs_type:  %s ",_print_cs_type(bmp.ih.cs_type));
+
+    // V5 additions
+    TRACE("intent             = %u", bmp.ih.intent);
+    TRACE("profile_data       = %u", bmp.ih.profile_data);
+    TRACE("profile_size       = %u", bmp.ih.profile_size);
+    TRACE("reserved           = %u", bmp.ih.reserved);
+
+
+    TRACE("read so far %zu bytes", read);
+
+    int bpp = bmp.ih.bit_count / 8; // bytes_per_pixel
+    int width = bmp.ih.width, height = bmp.ih.height;
+
+    ASSERT(bpp == 3 || bpp == 4, "Only supprt bpp of 24 or 32");
+    int image_size = bpp*
+    picasso_image *image = picasso_malloc();
+
+    fclose(fp);
+    return NULL;
 }

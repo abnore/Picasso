@@ -30,6 +30,9 @@ int32_t  picasso_read_s32_le(const uint8_t *p);
 void *picasso_read_entire_file(const char *path, size_t *out_size);
 int picasso_write_file(const char *path, const void *data, size_t size);
 
+void picasso_free_image(picasso_image *img);
+picasso_image *picasso_alloc_image(int width, int height, int channels);
+picasso_image *bmp_load_from_file(const char *filename);
 
 /* -------------------- ICC Profile Support -------------------- */
 typedef enum {
@@ -124,7 +127,7 @@ typedef struct {
         uint32_t offset_data;               // Start position of pixel data (bytes from the beginning of the file)
     } fh;                                   // .fh = file header
     struct {
-        uint32_t size;               // Must be 108
+        uint32_t size;                      // Must be 108
         int32_t width;
         int32_t height;
         uint16_t planes;
@@ -168,7 +171,7 @@ typedef struct {
 }PPM;
 
 #pragma pack(pop)
-
+picasso_image *picasso_alloc_image(int width, int height, int channels);
 /// @brief BMP functions
 BMP *picasso_load_bmp(const char *filename);
 int picasso_save_to_bmp(BMP *image, const char *file_path, picasso_icc_profile profile);
@@ -231,12 +234,13 @@ typedef struct {
     int x, y, width, height; // supporting negative values
 } picasso_rect;
 
+
 typedef struct {
     int x0, y0, x1, y1;
 } picasso_draw_bounds;
 
 void picasso_fill_rect(picasso_backbuffer *bf, picasso_rect *r, color c);
-void picasso_draw_rect(picasso_backbuffer *bf, picasso_rect *r, color c);
+void picasso_draw_rect(picasso_backbuffer *bf, picasso_rect *outer, int thickness, color c);
 
 void picasso_draw_line(picasso_backbuffer *bf, int x0, int y0, int x1, int y1, color c);
 

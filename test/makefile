@@ -3,9 +3,10 @@ CFLAGS  := -Wall -Wextra
 INCLUDE := -I. -I../ -I../icc_profiles
 
 SRC := \
-    test.c \
+     test.c \
     ../picasso.c \
     ../logger.c \
+    ../bmp.c \
     ../icc_profiles/picasso_icc_profiles.c \
     ../icc_profiles/picasso_icc_enum_to_string.c
 

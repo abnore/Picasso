@@ -27,25 +27,26 @@ void * picasso_realloc(void *ptr, size_t size){
 }
 
 /* -------------------- Little Endian Byte Readers Utility -------------------- */
-uint8_t read_u8(const uint8_t *p) {
+uint8_t picasso_read_u8(const uint8_t *p) {
     return p[0];
 }
 
-uint16_t read_u16_le(const uint8_t *p) {
-    uint16_t lo = read_u8(p);
-    uint16_t hi = read_u8(p + 1);
+uint16_t picasso_read_u16_le(const uint8_t *p) {
+    uint16_t lo = picasso_read_u8(p);
+    uint16_t hi = picasso_read_u8(p + 1);
     return lo | (hi << 8);
 }
 
-uint32_t read_u32_le(const uint8_t *p) {
-    uint16_t lo = read_u16_le(p);
-    uint16_t hi = read_u16_le(p + 2);
+uint32_t picasso_read_u32_le(const uint8_t *p) {
+    uint16_t lo = picasso_read_u16_le(p);
+    uint16_t hi = picasso_read_u16_le(p + 2);
     return (uint32_t)lo | ((uint32_t)hi << 16);
 }
-int32_t read_s32_le(const uint8_t *p) {
-    return (int32_t)read_u32_le(p);// safe because casting unsigned to signed preserves bit pattern
-
+int32_t picasso_read_s32_le(const uint8_t *p) {
+    return (int32_t)picasso_read_u32_le(p);// safe because casting unsigned to signed preserves bit pattern
+}
 /* -------------------- File Support -------------------- */
+
 void *picasso_read_entire_file(const char *path, size_t *out_size)
 {
     long size;
@@ -268,7 +269,32 @@ int picasso_save_to_ppm(PPM *image, const char *file_path)
     return 0;
 }
 
+picasso_image *picasso_alloc_image(int width, int height, int channels)
+{
+    if (width <= 0 || height <= 0 || (channels != 3 && channels != 4)) return NULL;
 
+    picasso_image *img = malloc(sizeof(picasso_image));
+    if (!img) return NULL;
+
+    img->width = width;
+    img->height = height;
+    img->channels = channels;
+    img->pixels = malloc(width * height * channels);
+    if (!img->pixels) {
+        free(img);
+        return NULL;
+    }
+
+    return img;
+}
+
+void picasso_free_image(picasso_image *img)
+{
+    if (img) {
+        free(img->pixels);
+        free(img);
+    }
+}
 // SPRITES
 
 picasso_sprite_sheet* picasso_create_sprite_sheet(
@@ -360,8 +386,8 @@ static bool picasso__clip_rect_to_bounds(picasso_backbuffer *bf, const picasso_r
 
     db->x0 = (r->x > 0) ? r->x : 0;
     db->y0 = (r->y > 0) ? r->y : 0;
-    db->x1 = (r->x + r->width < bf->width) ? r->x + r->width : bf->width;
-    db->y1 = (r->y + r->height < bf->height) ? r->y + r->height : bf->height;
+    db->x1 = (r->x + r->width < (int)bf->width) ? r->x + r->width : (int)bf->width;
+    db->y1 = (r->y + r->height < (int)bf->height) ? r->y + r->height : (int)bf->height;
 
     return true;
 }
