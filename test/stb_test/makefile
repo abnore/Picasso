@@ -1,6 +1,6 @@
 CC = clang
 CFLAGS = -Wall -Wextra -g -I. -I../../ -I.. -I../../icc_profiles
-SRC = test_stb_load_bmp.c ../../picasso.c ../../logger.c ../../icc_profiles/picasso_icc_profiles.c ../../icc_profiles/picasso_icc_enum_to_string.c
+SRC = test_stb_load_bmp.c ../../bmp.c ../../picasso.c ../../logger.c ../../icc_profiles/picasso_icc_profiles.c ../../icc_profiles/picasso_icc_enum_to_string.c
 OUT = test_stb_bmp
 
 all: $(OUT)

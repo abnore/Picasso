@@ -1,32 +1,69 @@
-// test_stb_load_bmp.c
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBI_ONLY_bmp
+
 #include "stb_image.h"
-#include "picasso.h"
+#include "stb_image_write.h"
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
 
-
-#define STBI_ONLY_BMP
+#include "picasso.h"
 
 int main(void) {
-    int width1, height1, channels1;
-    int width2, height2, channels2;
-    int width3, height3, channels3;
-    int width4, height4, channels4;
-    uint8_t *data1 = stbi_load("sample1.bmp", &width1, &height1, &channels1, 4);
-    uint8_t *data2 = stbi_load("sample2.bmp", &width2, &height2, &channels2, 4);
-    uint8_t *data3 = stbi_load("sample3.bmp", &width3, &height3, &channels3, 4);
-    uint8_t *data4 = stbi_load("unknown.bmp", &width4, &height4, &channels4, 4);
+    // === STB: Load → save ===
+    int stb_width, stb_height, stb_channels;
+    uint8_t *stb_data = stbi_load("../rgb24.bmp", &stb_width, &stb_height, &stb_channels, 0);
+    if (!stb_data) {
+        fprintf(stderr, "Failed to load image with stb: %s\n", stbi_failure_reason());
+        return 1;
+    }
 
-    BMP *bmp1 = picasso_create_bmp_from_rgba(width1, height1, data1);
-    BMP *bmp2 = picasso_create_bmp_from_rgba(width2, height2, data2);
-    BMP *bmp3 = picasso_create_bmp_from_rgba(width3, height3, data3);
-    BMP *bmp4 = picasso_create_bmp_from_rgba(width4, height4, data4);
+    if (!stbi_write_bmp("stb_roundtrip.bmp", stb_width, stb_height, stb_channels, stb_data)) {
+        fprintf(stderr, "Failed to save stb_roundtrip.bmp\n");
+        stbi_image_free(stb_data);
+        return 1;
+    }
 
-    picasso_save_to_bmp(bmp1, "from_stb_saved1.bmp", PICASSO_PROFILE_SRGB);
-    picasso_save_to_bmp(bmp2, "from_stb_saved2.bmp", PICASSO_PROFILE_SRGB);
-    picasso_save_to_bmp(bmp3, "from_stb_saved3.bmp", PICASSO_PROFILE_SRGB);
-    picasso_save_to_bmp(bmp4, "from_stb_saved4.bmp", PICASSO_PROFILE_SRGB);
+    bmp *stb_bmp = picasso_create_bmp_from_rgba(stb_width, stb_height, stb_channels, stb_data);
+    if (!stb_bmp) {
+        fprintf(stderr, "Failed to create bmp from stb data\n");
+        stbi_image_free(stb_data);
+        return 1;
+    }
 
+    picasso_save_to_bmp(stb_bmp, "stb_loaded_by_picasso.bmp", PICASSO_PROFILE_NONE);
+    stbi_image_free(stb_data);
+    // Optionally: picasso_free_bmp(stb_bmp);
+
+    // === Picasso: Load → save ===
+    picasso_image *picasso_loaded = bmp_load_from_file("../rgb24.bmp");
+    if (!picasso_loaded) {
+        fprintf(stderr, "Failed to load image with Picasso\n");
+        return 1;
+    }
+
+    if (!stbi_write_bmp("picasso_saved_by_stb.bmp",
+                        picasso_loaded->width,
+                        picasso_loaded->height,
+                        picasso_loaded->channels,
+                        picasso_loaded->pixels)) {
+        fprintf(stderr, "Failed to save picasso_saved_by_stb.bmp\n");
+        return 1;
+    }
+
+    bmp *picasso_bmp = picasso_create_bmp_from_rgba(picasso_loaded->width,
+                                                    picasso_loaded->height,
+                                                    picasso_loaded->channels,
+                                                    picasso_loaded->pixels);
+    if (!picasso_bmp) {
+        fprintf(stderr, "Failed to create bmp from Picasso-loaded image\n");
+        return 1;
+    }
+
+    picasso_save_to_bmp(picasso_bmp, "picasso_roundtrip.bmp", PICASSO_PROFILE_NONE);
+    // Optionally: free picasso_image and bmp here
+
+    printf("All roundtrip tests complete.\n");
     return 0;
 }
-

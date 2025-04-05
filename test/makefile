@@ -10,7 +10,7 @@ SRC := \
     ../icc_profiles/picasso_icc_profiles.c \
     ../icc_profiles/picasso_icc_enum_to_string.c
 
-TARGET := test_ppm
+TARGET := test_bmp
 
 .PHONY: all run clean
 

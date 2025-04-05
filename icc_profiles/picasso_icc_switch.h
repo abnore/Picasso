@@ -16,27 +16,27 @@
         icc_data = picasso_icc_display_p3;
         icc_size = picasso_icc_display_p3_len;
         break;
-    case PICASSO_PROFILE_GENERIC_CMYK_PROFILE:
+    case PICASSO_PROFILE_GENERIC_CMYK:
         icc_data = picasso_icc_generic_cmyk_profile;
         icc_size = picasso_icc_generic_cmyk_profile_len;
         break;
-    case PICASSO_PROFILE_GENERIC_GRAY_GAMMA_2_2_PROFILE:
+    case PICASSO_PROFILE_GENERIC_GRAY_GAMMA_2_2:
         icc_data = picasso_icc_generic_gray_gamma_2_2_profile;
         icc_size = picasso_icc_generic_gray_gamma_2_2_profile_len;
         break;
-    case PICASSO_PROFILE_GENERIC_GRAY_PROFILE:
+    case PICASSO_PROFILE_GENERIC_GRAY:
         icc_data = picasso_icc_generic_gray_profile;
         icc_size = picasso_icc_generic_gray_profile_len;
         break;
-    case PICASSO_PROFILE_GENERIC_LAB_PROFILE:
+    case PICASSO_PROFILE_GENERIC_LAB:
         icc_data = picasso_icc_generic_lab_profile;
         icc_size = picasso_icc_generic_lab_profile_len;
         break;
-    case PICASSO_PROFILE_GENERIC_RGB_PROFILE:
+    case PICASSO_PROFILE_GENERIC_RGB:
         icc_data = picasso_icc_generic_rgb_profile;
         icc_size = picasso_icc_generic_rgb_profile_len;
         break;
-    case PICASSO_PROFILE_GENERIC_XYZ_PROFILE:
+    case PICASSO_PROFILE_GENERIC_XYZ:
         icc_data = picasso_icc_generic_xyz_profile;
         icc_size = picasso_icc_generic_xyz_profile_len;
         break;
