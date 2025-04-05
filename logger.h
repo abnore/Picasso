@@ -116,10 +116,15 @@ void log_output_ext(log_level level, const char* file, int line, const char* fun
 #define TRACE(msg, ...)  LOG(LOG_LEVEL_TRACE, msg, ##__VA_ARGS__)
 
 // Assertions
-void report_assertion_failure(const char* expression, const char* message, const char* file, int line);
+void report_assertion_failure(const char* expr_str, const char* file, int line, const char* fmt, ...);
 
-#define ASSERT(expr, msg) \
-    if (!(expr)) { report_assertion_failure(#expr, msg, __FILE__, __LINE__); }
+#define ASSERT(expr, ...) \
+    do { \
+        if (!(expr)) { \
+            report_assertion_failure(#expr, __FILE__, __LINE__, __VA_ARGS__); \
+            abort(); \
+        } \
+    } while (0)
 
 #define BUILD_ASSERT(cond, msg) _Static_assert(cond, msg)
 

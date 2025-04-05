@@ -165,12 +165,20 @@ void log_output_ext(log_level level, const char* file, int line, const char* fun
 }
 
 //-------------------------------------------------------------
-// Assertion support (non-crashing)
+// Assertion support (crashing)
 //-------------------------------------------------------------
 
-void report_assertion_failure(const char* expression, const char* message, const char* file, int line)
+void report_assertion_failure(const char* expression, const char* file, int line, const char* fmt, ...)
 {
-    log_output_ext(LOG_LEVEL_FATAL, file, line, "ASSERT", "Assertion failed: %s — %s", expression, message);
+    va_list args;
+    va_start(args, fmt);
+
+    char msg[2048];
+    vsnprintf(msg, sizeof(msg), fmt, args);
+
+    log_output_ext(LOG_LEVEL_FATAL, file, line, "ASSERT", "Assertion failed: %s — %s", expression, msg);
+
+    va_end(args);
 }
 
 //-------------------------------------------------------------

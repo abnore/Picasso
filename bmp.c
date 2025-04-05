@@ -4,14 +4,52 @@
 #include "logger.h"
 #include "picasso_icc_profiles.h"
 
-#define LCS_GM_ABS_COLORIMETRIC   0x00000008
-#define LCS_GM_BUSINESS           0x00000001  // Saturation
-#define LCS_GM_GRAPHICS           0x00000002  // Relative colorimetric
-#define LCS_GM_IMAGES             0x00000004  // Perceptual
+#define LCS_GM_BUSINESS          (1<<0) // 0x00000001  // Saturation
+#define LCS_GM_GRAPHICS          (1<<1) // 0x00000002  // Relative colorimetric
+#define LCS_GM_IMAGES            (1<<2) // 0x00000004  // Perceptual
+#define LCS_GM_ABS_COLORIMETRIC  (1<<3) // 0x00000008
 
 #define bits_to_bytes(x) ((x)>>3)
 #define bytes_to_bits(x) ((x)<<3)
 
+// This counts how many bits are set to 1 in the mask.
+static inline int mask_bit_count(uint32_t mask) {
+    int count = 0;
+    while (mask) {
+        count += mask & 1;
+        mask >>= 1;
+    }
+    return count;
+}
+// This counts how far right the mask needs to be
+// shifted to align its least significant bit to bit 0.
+static inline int mask_bit_shift(uint32_t mask) {
+    if (!mask) return 0;
+    int shift = 0;
+    while ((mask & 1) == 0) {
+        mask >>= 1;
+        shift++;
+    }
+    return shift;
+}
+// A pixel decoder is the part of your BMP loader that interprets raw pixel
+// data using the bit masks — especially for 16-bit or 32-bit images using
+// BI_BITFIELDS or BI_ALPHABITFIELDS.
+static inline uint8_t decode_channel(uint32_t pixel, uint32_t mask) {
+    if (!mask) return 0;
+
+    int shift = mask_bit_shift(mask);
+    int bits  = mask_bit_count(mask);
+
+    uint32_t value = (pixel & mask) >> shift;
+
+    // Normalize if bits < 8 (e.g. 5-bit color)
+    if (bits == 8) return (uint8_t)value;
+    else if (bits == 0) return 0;
+
+    // Scale up to 8-bit
+    return (uint8_t)((value * 255) / ((1 << bits) - 1));
+}
 typedef enum {
     BITMAP_INVALID     = -1,
     BITMAPCOREHEADER   = 12,  // OS/2 1.x — rarely used but stb supports it
@@ -22,16 +60,40 @@ typedef enum {
 } bmp_header_type;
 
 typedef enum {
-    // Native Windows color space ('Win ' in little-endian)
-    LCS_WINDOWS_COLOR_SPACE = 0x57696E20,
-    // Standard sRGB color space ('sRGB' in little-endian) — this is the most common.
-    LCS_sRGB                = 0x73524742,
-    // Custom ICC profile embedded in file ('MBED' in little-endian, displayed as 0x4D424544)
-    PROFILE_EMBEDDED        = 0x4D424544,
-    // ICC profile is in an external file ('LINK' in little-endian)
-    PROFILE_LINKED          = 0x4C494E4B,
+    BI_RGB            = 0,  // No compression
+    BI_RLE8           = 1,  // RLE 8-bit/pixel
+    BI_RLE4           = 2,  // RLE 4-bit/pixel
+    BI_BITFIELDS      = 3,  // Bitfields (RGB masks)
+    BI_JPEG           = 4,  // JPEG compression (not common)
+    BI_PNG            = 5,  // PNG compression (not common)
+    BI_ALPHABITFIELDS = 6,  // Bitfields with alpha channel mask
+    BI_CMYK           = 11, // CMYK uncompressed
+    BI_CMYKRLE8       = 12, // RLE-8 CMYK
+    BI_CMYKRLE4       = 13  // RLE-4 CMYK
+} bmp_compression;
+
+typedef enum {
+    LCS_WINDOWS_COLOR_SPACE = 0x57696E20, // Native Windows color space ('Win ' in little-endian)
+    LCS_sRGB                = 0x73524742, // Standard sRGB color space ('sRGB' in little-endian) — this is the most common.
+    PROFILE_EMBEDDED        = 0x4D424544, // Custom ICC profile embedded in file ('MBED' in little-endian, displayed as 0x4D424544)
+    PROFILE_LINKED          = 0x4C494E4B, // ICC profile is in an external file ('LINK' in little-endian)
 } bmp_cs_type;
 
+const char *bmp_compression_to_str(uint32_t compression) {
+    switch (compression) {
+        case BI_RGB:            return "BI_RGB";
+        case BI_RLE8:           return "BI_RLE8";
+        case BI_RLE4:           return "BI_RLE4";
+        case BI_BITFIELDS:      return "BI_BITFIELDS";
+        case BI_JPEG:           return "BI_JPEG";
+        case BI_PNG:            return "BI_PNG";
+        case BI_ALPHABITFIELDS: return "BI_ALPHABITFIELDS";
+        case BI_CMYK:           return "BI_CMYK";
+        case BI_CMYKRLE8:       return "BI_CMYKRLE8";
+        case BI_CMYKRLE4:       return "BI_CMYKRLE4";
+        default:                return "Unknown";
+    }
+}
 static const char *picasso_icc_profile_name(picasso_icc_profile profile) {
     switch (profile) {
         case PICASSO_PROFILE_NONE: return "None";
@@ -50,6 +112,27 @@ static const char *picasso_icc_profile_name(picasso_icc_profile profile) {
         case PICASSO_PROFILE_ROMM_RGB: return "ROMM RGB";
         case PICASSO_PROFILE_SRGB: return "sRGB Profile";
         default: return "Unknown";
+    }
+}
+char * _print_cs_type( bmp_cs_type type)
+{
+    switch(type) {
+        case LCS_sRGB: return "LCS_sRBG = 0x73524742";
+        case LCS_WINDOWS_COLOR_SPACE: return "LCS_WINDOWS_COLOR_SPACE = 0x57696E20";
+        case PROFILE_EMBEDDED: return "PROFILE_EMBEDDED = 0x4D424544";
+        case PROFILE_LINKED: return "PROFILE_LINKED = 0x4C494E4B";
+        default: return "Unknown";
+    }
+}
+char *_print_header_type(bmp_header_type type)
+{
+    switch(type) {
+        case BITMAPCOREHEADER: return "bitmapcoreheader";
+        case BITMAPINFOHEADER: return "bitmapinfoheader";
+        case BITMAPV3INFOHEADER: return "bitmapv3infoheader";
+        case BITMAPV4HEADER: return "bitmapv4header";
+        case BITMAPV5HEADER: return "bitmapv5header";
+        default: return "Not supported";
     }
 }
 
@@ -215,10 +298,10 @@ bmp *picasso_create_bmp_from_rgba(int width, int height, int channels, const uin
     b->ih.y_pixels_per_meter = 3780;
 
     if (channels == 4) {
-        b->ih.red_mask   = 0x00FF0000;
-        b->ih.green_mask = 0x0000FF00;
-        b->ih.blue_mask  = 0x000000FF;
-        b->ih.alpha_mask = 0xFF000000;
+        b->ih.red_mask   = 0xff << 16; // 0x00FF0000;
+        b->ih.green_mask = 0xff << 8;  // 0x0000FF00;
+        b->ih.blue_mask  = 0xff << 0;  // 0x000000FF;
+        b->ih.alpha_mask = 0xff << 24; // 0xFF000000;
     }
 
     b->ih.cs_type = LCS_sRGB;
@@ -270,55 +353,13 @@ bmp *picasso_create_bmp_from_rgba(int width, int height, int channels, const uin
     return b;
 }
 
-char * _print_cs_type( bmp_cs_type type)
-{
-    switch(type) {
-        case LCS_sRGB: // = 0x73524742, // Standard sRGB color space ('sRGB' in little-endian) â€” this is the most common.
-            return "LCS_sRBG = 0x73524742";
-            break;
-        case LCS_WINDOWS_COLOR_SPACE: // = 0x57696E20, // Native Windows color space ('Win ' in little-endian)
-            return "LCS_WINDOWS_COLOR_SPACE = 0x57696E20";
-            break;
-        case PROFILE_EMBEDDED: // = 0x4D424544, // Custom ICC profile embedded in file ('DEBM' / 'MBED' in little-endian)
-            return "PROFILE_EMBEDDED = 0x4D424544";
-            break;
-        case PROFILE_LINKED: // = 0x4C494E4B, // ICC profile is in an external file ('LINK')
-            return "PROFILE_LINKED = 0x4C494E4B";
-            break;
-        default:
-            return "Unknown";
-            break;
-    }
-}
-char *_print_header_type(bmp_header_type type)
-{
-    switch(type) {
-        case BITMAPCOREHEADER:
-            return "bitmapcoreheader";
-            break;
-        case BITMAPINFOHEADER:
-            return "bitmapinfoheader";
-            break;
-        case BITMAPV3INFOHEADER:
-            return "BITMAPV3INFOHEADER";
-            break;
-        case BITMAPV4HEADER:
-            return "bitmapv4header";
-            break;
-        case BITMAPV5HEADER:
-            return "bitmapv5header";
-            break;
-        default:
-            return "Not supported";
-            break;
-    }
-}
 
 typedef struct {
     bmp image;
     bmp_header_type type;
-    int bytes_pp, width, height, row_size, size_image;
-    bool is_flipped;
+    int bytes_pp, width, height, row_size, row_stride, size_image, comp;
+    bool is_flipped, all_alpha_zero;
+    int rm_shift, gm_shift, bm_shift, am_shift;
     uint32_t rm, gm, bm, am;
 }_bmp_load_info;
 
@@ -375,10 +416,12 @@ static void picasso__parse_coreheader_fields(_bmp_load_info *bmp)
     TRACE("height             = %d", bmp->height);
     TRACE("is_flipped         = %s", bmp->is_flipped ? "true" : "false");
 }
+
 static void picasso__parse_infoheader_fields(_bmp_load_info *bmp)
 {
     bmp->bytes_pp = bits_to_bytes(bmp->image.ih.bit_count);
     bmp->size_image = bmp->image.ih.size_image;
+    bmp->comp = bmp->image.ih.compression;
 
     TRACE("bit_count          = %d", bmp->image.ih.bit_count);
     TRACE("compression        = %u", bmp->image.ih.compression);
@@ -392,29 +435,48 @@ static void picasso__parse_infoheader_fields(_bmp_load_info *bmp)
     } else {
         bmp->row_size = bmp->size_image / bmp->height;
     }
-}
-static void picasso__parse_v5_fields(_bmp_load_info *bmp)
-{
-    TRACE("do nothing yet AAAAAA");
-    uint32_t intent         = bmp->image.ih.intent;
-    TRACE("intent : %d",bmp->image.ih.intent);
-    ASSERT(intent == LCS_GM_IMAGES, "so far so good");
-//    uint32_t profile_data   = bmp->image.ih.profile_data;
-//    uint32_t profile_size   = bmp->image.ih.profile_size;
-//    uint32_t reserved       = bmp->image.ih.reserved;
-}
-static void picasso__parse_v4_fields(_bmp_load_info *bmp){
 
-    TRACE("do nothing yet AAAAAA");
+    int mask_bytes = bmp->image.fh.offset_data - (BITMAPINFOHEADER + sizeof(bmp_fh)) ;
 
-    /* every row has to be divisble by 4 DWORD aligned */
-    bmp->row_size = ((bmp->image.ih.bit_count * bmp->width+31)/32) * 4;
-    bmp->size_image = bmp->row_size * bmp->height;
-//        uint32_t cs_type;
-//        int32_t endpoints[9];
-//        uint32_t gamma_red;
-//        uint32_t gamma_green;
-//        uint32_t gamma_blue;
+    switch (bmp->comp) {
+        case BI_RGB:
+            break;
+
+        case BI_BITFIELDS:
+        case BI_ALPHABITFIELDS:
+            TRACE("Offset data is %d", mask_bytes);
+
+            bmp->rm = bmp->image.ih.red_mask;
+            bmp->gm = bmp->image.ih.green_mask;
+            bmp->bm = bmp->image.ih.blue_mask;
+
+            TRACE("red mask:    0x%08x", bmp->rm);
+            TRACE("green mask:  0x%08x", bmp->gm);
+            TRACE("blue mask:   0x%08x", bmp->bm);
+
+            if (mask_bytes == 16) {
+                bmp->am = bmp->image.ih.alpha_mask;
+                TRACE("alpha mask:  0x%08x", bmp->am);
+            }
+
+            bmp->rm_shift = mask_bit_shift(bmp->rm);
+            bmp->gm_shift = mask_bit_shift(bmp->gm);
+            bmp->bm_shift = mask_bit_shift(bmp->bm);
+            bmp->am_shift = mask_bit_shift(bmp->am);
+
+            TRACE("bmp rm  shift is %d", bmp->rm_shift);
+            TRACE("bmp gm  shift is %d", bmp->gm_shift);
+            TRACE("bmp bm  shift is %d", bmp->bm_shift);
+            if (bmp->am) {
+                TRACE("bmp am  shift is %d", bmp->am_shift);
+            }
+
+            break;
+
+        default:
+            ERROR("Compression %s not supported yet", bmp_compression_to_str(bmp->comp));
+            break;
+    }
 }
 
 static void picasso__parse_v3_fields(_bmp_load_info *bmp)
@@ -423,15 +485,45 @@ static void picasso__parse_v3_fields(_bmp_load_info *bmp)
     bmp->gm = bmp->image.ih.green_mask;
     bmp->bm = bmp->image.ih.blue_mask;
     bmp->am = bmp->image.ih.alpha_mask;
+
+    TRACE("red mask:    0x%08x", bmp->image.ih.red_mask);
+    TRACE("green mask:  0x%08x", bmp->image.ih.green_mask);
+    TRACE("blue mask:   0x%08x", bmp->image.ih.blue_mask);
+    TRACE("alpha mask:  0x%08x", bmp->image.ih.alpha_mask);
+}
+
+static void picasso__parse_v4_fields(_bmp_load_info *bmp){
+
+    /* every row has to be divisble by 4 DWORD aligned */
+    bmp->row_size = ((bmp->image.ih.bit_count * bmp->width+31)/32) * 4;
+    bmp->size_image = bmp->row_size * bmp->height;
+    bmp->row_stride = bmp->width * bmp->bytes_pp;
+//        uint32_t cs_type;
+//        int32_t endpoints[9];
+//        uint32_t gamma_red;
+//        uint32_t gamma_green;
+//        uint32_t gamma_blue;
 }
 
 
+static void picasso__parse_v5_fields(_bmp_load_info *bmp)
+{
+    uint32_t intent         = bmp->image.ih.intent;
+    TRACE("intent : %d",bmp->image.ih.intent);
+    if(intent == LCS_GM_IMAGES)
+        INFO("so far so good");
+    ASSERT(intent < (1<<4), "Not supported intent");
+//    uint32_t profile_data   = bmp->image.ih.profile_data;
+//    uint32_t profile_size   = bmp->image.ih.profile_size;
+//    uint32_t reserved       = bmp->image.ih.reserved;
+}
 
 
 /* Robust, and should handle all format now.. */
 picasso_image *bmp_load_from_file(const char *filename)
 {
     _bmp_load_info bmp = {0};
+    picasso_image *img = NULL;
     size_t read = 0;
     FILE *fp = fopen(filename, "rb");
     if (!fp) return NULL;
@@ -439,7 +531,7 @@ picasso_image *bmp_load_from_file(const char *filename)
     bmp.type = picasso__validate_bmp(&read, &bmp.image, fp);
     if (bmp.type == BITMAP_INVALID) {
         fclose(fp);
-        return NULL;
+        return img;
     }
 
     picasso__parse_coreheader_fields(&bmp);
@@ -449,27 +541,22 @@ picasso_image *bmp_load_from_file(const char *filename)
     if (bmp.type >= BITMAPV5HEADER) picasso__parse_v5_fields(&bmp);
 
     TRACE("Header size: %zu (fh) + %d (ih) = %zu",
-          sizeof(bmp.image.fh), bmp.type, sizeof(bmp.image.fh) + bmp.type);
+            sizeof(bmp.image.fh), bmp.type, sizeof(bmp.image.fh) + bmp.type);
     TRACE("Actual header size %zu bytes", read);
-    ASSERT(bmp.bytes_pp == 3 || bmp.bytes_pp == 4, "Only support bpp of 3 or 4");
+    if(!(bmp.bytes_pp == 3 || bmp.bytes_pp == 4)) WARN("Only support bpp of 3 or 4");
 
-    int row_stride = bmp.width * bmp.bytes_pp;
-    int row_size   = ((row_stride + 3) / 4) * 4; // padded row size
+    img = picasso_malloc(sizeof(picasso_image));
+    {
+        img->width    = bmp.width;
+        img->height   = bmp.height;
+        img->channels = bmp.bytes_pp;
+        img->pixels   = picasso_malloc(bmp.row_stride * bmp.height);
+    }
 
-    TRACE("HEIGHT %d", bmp.height);
-
-    picasso_image *img = picasso_malloc(sizeof(picasso_image));
-    *img = (picasso_image){
-        .width    = bmp.width,
-        .height   = bmp.height,
-        .channels = bmp.bytes_pp,
-        .pixels   = picasso_malloc(row_stride * bmp.height)
-    };
-
-    uint8_t *row_buf = malloc(row_size);
+    uint8_t *row_buf = malloc(bmp.row_size);
 
     for (int y = 0; y < bmp.height; ++y) {
-        if (fread(row_buf, 1, row_size, fp) != (size_t)row_size) {
+        if (fread(row_buf, 1, bmp.row_size, fp) != (size_t)bmp.row_size) {
             ERROR("Failed to read row %d", y);
             free(row_buf);
             picasso_free(img->pixels);
@@ -479,21 +566,57 @@ picasso_image *bmp_load_from_file(const char *filename)
         }
 
         int dest_y = bmp.is_flipped ? (bmp.height - 1 - y) : y;
-        memcpy(img->pixels + dest_y * row_stride, row_buf, row_stride);
+        memcpy(img->pixels + dest_y * bmp.row_stride, row_buf, bmp.row_stride);
     }
 
     free(row_buf);
+    /* Finally done reading the file */
     fclose(fp);
 
-    // Swap BGR -> RGB in-place
+    bool all_alpha_zero = (img->channels == 4);
+
     for (int y = 0; y < bmp.height; ++y) {
-        int row_y = bmp.is_flipped ? y : (bmp.height - 1 - y);
-        uint8_t *row = img->pixels + row_y * row_stride;
+        uint8_t *row = img->pixels + y * bmp.row_stride;
+
         for (int x = 0; x < bmp.width; ++x) {
             uint8_t *p = row + x * bmp.bytes_pp;
-            uint8_t tmp = p[0]; p[0] = p[2]; p[2] = tmp;
+
+            if (bmp.comp == BI_BITFIELDS && bmp.bytes_pp == 4) {
+                // Decode from 32-bit pixel using bitmasks
+                uint32_t pixel;
+                memcpy(&pixel, p, 4);
+
+                uint8_t r = decode_channel(pixel, bmp.rm);
+                uint8_t g = decode_channel(pixel, bmp.gm);
+                uint8_t b = decode_channel(pixel, bmp.bm);
+                uint8_t a = decode_channel(pixel, bmp.am);
+
+                p[0] = r;
+                p[1] = g;
+                p[2] = b;
+                p[3] = a;
+
+                if (all_alpha_zero && a != 0)
+                    all_alpha_zero = false;
+            } else {
+                // Legacy BGR → RGB swap
+                uint8_t tmp = p[0];
+                p[0] = p[2];
+                p[2] = tmp;
+
+                if (img->channels == 4 && all_alpha_zero && p[3] != 0)
+                    all_alpha_zero = false;
+            }
         }
     }
 
+    if (all_alpha_zero && img->channels == 4) {
+        TRACE("All alpha values were zero — patching to 0xFF");
+        for (int y = 0; y < bmp.height; ++y) {
+            uint8_t *row = img->pixels + y * bmp.row_stride;
+            for (int x = 0; x < bmp.width; ++x)
+                row[x * img->channels + 3] = 0xFF;
+        }
+    }
     return img;
 }
