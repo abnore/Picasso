@@ -422,6 +422,7 @@ static void picasso__parse_infoheader_fields(_bmp_load_info *bmp)
     bmp->bytes_pp = bits_to_bytes(bmp->image.ih.bit_count);
     bmp->size_image = bmp->image.ih.size_image;
     bmp->comp = bmp->image.ih.compression;
+    bmp->row_stride = bmp->width * bmp->bytes_pp;
 
     TRACE("bit_count          = %d", bmp->image.ih.bit_count);
     TRACE("compression        = %u", bmp->image.ih.compression);
@@ -520,7 +521,7 @@ static void picasso__parse_v5_fields(_bmp_load_info *bmp)
 
 
 /* Robust, and should handle all format now.. */
-picasso_image *bmp_load_from_file(const char *filename)
+picasso_image *picasso_load_bmp(const char *filename)
 {
     _bmp_load_info bmp = {0};
     picasso_image *img = NULL;
@@ -556,7 +557,7 @@ picasso_image *bmp_load_from_file(const char *filename)
     uint8_t *row_buf = malloc(bmp.row_size);
 
     for (int y = 0; y < bmp.height; ++y) {
-        if (fread(row_buf, 1, bmp.row_size, fp) != (size_t)bmp.row_size) {
+        if ((read = fread(row_buf, 1, bmp.row_size, fp)) != (size_t)bmp.row_size) {
             ERROR("Failed to read row %d", y);
             free(row_buf);
             picasso_free(img->pixels);
@@ -574,6 +575,7 @@ picasso_image *bmp_load_from_file(const char *filename)
     fclose(fp);
 
     bool all_alpha_zero = (img->channels == 4);
+    INFO("all alphas %d", all_alpha_zero);
 
     for (int y = 0; y < bmp.height; ++y) {
         uint8_t *row = img->pixels + y * bmp.row_stride;
@@ -604,6 +606,7 @@ picasso_image *bmp_load_from_file(const char *filename)
                 p[0] = p[2];
                 p[2] = tmp;
 
+                //TRACE("value of p[0] 0x%08x, and p[2] 0x%08x", p[0], p[2]);
                 if (img->channels == 4 && all_alpha_zero && p[3] != 0)
                     all_alpha_zero = false;
             }

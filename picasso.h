@@ -32,7 +32,6 @@ int picasso_write_file(const char *path, const void *data, size_t size);
 
 void picasso_free_image(picasso_image *img);
 picasso_image *picasso_alloc_image(int width, int height, int channels);
-picasso_image *bmp_load_from_file(const char *filename);
 
 /* -------------------- ICC Profile Support -------------------- */
 typedef enum {
@@ -126,6 +125,7 @@ typedef struct {
     uint16_t reserved2;
     uint32_t offset_data;
 }bmp_fh; // file header
+
 typedef struct {
     uint32_t size;
     int32_t width;
@@ -163,45 +163,45 @@ typedef struct {
     uint8_t *pixels;
 } bmp;
 
-typedef struct {
-    struct {
-        uint16_t file_type;                 // File type always ascii `BM` which is 0x4D42
-        uint32_t file_size;                 // Size of the file (in bytes)
-        uint16_t reserved1;                 // Reserved, always 0
-        uint16_t reserved2;                 // Reserved, always 0
-        uint32_t offset_data;               // Start position of pixel data (bytes from the beginning of the file)
-    } fh;                                   // .fh = file header
-    struct {
-        uint32_t size;                      // Must be 12, 40, 56, 108 124
-        int32_t width;
-        int32_t height;                      // - this is 12!
-        uint16_t planes;
-        uint16_t bit_count;
-        uint32_t compression;
-        uint32_t size_image;
-        int32_t x_pixels_per_meter;
-        int32_t y_pixels_per_meter;
-        uint32_t colors_used;
-        uint32_t colors_important;          // - This is 40
-
-        // V4 fields
-        uint32_t red_mask;
-        uint32_t green_mask;
-        uint32_t blue_mask;
-        uint32_t alpha_mask;               // - This is 56!
-        uint32_t cs_type;
-        int32_t endpoints[9];               //  36 bytes here 96 - Unused (XYZ triples for color space)
-        uint32_t gamma_red;                 //
-        uint32_t gamma_green;
-        uint32_t gamma_blue;             // 108
-        // V5 additions
-        uint32_t intent;
-        uint32_t profile_data;
-        uint32_t profile_size;
-        uint32_t reserved;                  // This is 124
-    } ih;                                   // .ih = info header
-    uint8_t *pixels;
-}BMP;
+//typedef struct {
+//    struct {
+//        uint16_t file_type;                 // File type always ascii `BM` which is 0x4D42
+//        uint32_t file_size;                 // Size of the file (in bytes)
+//        uint16_t reserved1;                 // Reserved, always 0
+//        uint16_t reserved2;                 // Reserved, always 0
+//        uint32_t offset_data;               // Start position of pixel data (bytes from the beginning of the file)
+//    } fh;                                   // .fh = file header
+//    struct {
+//        uint32_t size;                      // Must be 12, 40, 56, 108 124
+//        int32_t width;
+//        int32_t height;                      // - this is 12!
+//        uint16_t planes;
+//        uint16_t bit_count;
+//        uint32_t compression;
+//        uint32_t size_image;
+//        int32_t x_pixels_per_meter;
+//        int32_t y_pixels_per_meter;
+//        uint32_t colors_used;
+//        uint32_t colors_important;          // - This is 40
+//
+//        // V4 fields
+//        uint32_t red_mask;
+//        uint32_t green_mask;
+//        uint32_t blue_mask;
+//        uint32_t alpha_mask;               // - This is 56!
+//        uint32_t cs_type;
+//        int32_t endpoints[9];               //  36 bytes here 96 - Unused (XYZ triples for color space)
+//        uint32_t gamma_red;                 //
+//        uint32_t gamma_green;
+//        uint32_t gamma_blue;             // 108
+//        // V5 additions
+//        uint32_t intent;
+//        uint32_t profile_data;
+//        uint32_t profile_size;
+//        uint32_t reserved;                  // This is 124
+//    } ih;                                   // .ih = info header
+//    uint8_t *pixels;
+//}BMP;
 
 /* PPM header is literal ascii - must be parsed
  * like a text file, not with headers.
@@ -218,9 +218,10 @@ typedef struct {
 #pragma pack(pop)
 picasso_image *picasso_alloc_image(int width, int height, int channels);
 /// @brief BMP functions
-bmp *picasso_load_bmp(const char *filename);
+picasso_image *picasso_load_bmp(const char *filename);
 int picasso_save_to_bmp(bmp *image, const char *file_path, picasso_icc_profile profile);
-bmp *picasso_create_bmp_from_rgba(int width, int height,int channels, const uint8_t *pixel_data);
+bmp *picasso_create_bmp_from_rgba(int width, int height, int channels, const uint8_t *pixel_data);
+int picasso_save_rgba_to_bmp(const char *file_path, int width, int height, int channels, const uint8_t *pixels, picasso_icc_profile profile);
 
 /// @brief PPM functions
 PPM *picasso_load_ppm(const char *filename);

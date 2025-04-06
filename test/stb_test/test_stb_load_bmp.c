@@ -13,7 +13,7 @@
 int main(void) {
     // === STB: Load → save ===
     int stb_width, stb_height, stb_channels;
-    uint8_t *stb_data = stbi_load("../rgb24.bmp", &stb_width, &stb_height, &stb_channels, 0);
+    uint8_t *stb_data = stbi_load("../rgb32.bmp", &stb_width, &stb_height, &stb_channels, 0);
     if (!stb_data) {
         fprintf(stderr, "Failed to load image with stb: %s\n", stbi_failure_reason());
         return 1;
@@ -37,7 +37,7 @@ int main(void) {
     // Optionally: picasso_free_bmp(stb_bmp);
 
     // === Picasso: Load → save ===
-    picasso_image *picasso_loaded = bmp_load_from_file("../rgb24.bmp");
+    picasso_image *picasso_loaded = picasso_load_bmp("../rgb32.bmp");
     if (!picasso_loaded) {
         fprintf(stderr, "Failed to load image with Picasso\n");
         return 1;
