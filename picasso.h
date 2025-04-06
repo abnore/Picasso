@@ -11,6 +11,7 @@ typedef struct {
     int width;
     int height;
     int channels; // 3 = RGB, 4 = RGBA
+    int row_stride;
     uint8_t *pixels;
 } picasso_image;
 
@@ -57,7 +58,18 @@ typedef enum {
 #define PICASSO_ABS(a)     ({ __typeof__(a) _a = (a); _a > 0 ? _a : -_a; })
 #define PICASSO_MAX(a,b)   ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a > _b ? _a : _b; })
 #define PICASSO_MIN(a,b)   ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a < _b ? _a : _b; })
+#define PICASSO_SWAP(a,b)  ({ __typeof__(a) _a = (a); (a) = (b); (b) = _a;})
 
+
+// Set alpha value in percent, where 0 is transparent and 100 is fully opaque
+#define SET_ALPHA(c, percent)   ((color){(c).r,(c).g, (c).b, \
+                                (uint8_t)(((percent)*255)/100) })
+#define GET_RED(c)   ((uint8_t)(c).r)
+#define GET_GREEN(c) ((uint8_t)(c).g)
+#define GET_BLUE(c)  ((uint8_t)(c).b)
+#define GET_ALPHA(c) ((uint8_t)(c).a)
+
+#define PICASSO_CIRCLE_DEFAULT_TOLERANCE 2
 /* -------------------- Color Section -------------------- */
 
 typedef struct {
@@ -67,24 +79,24 @@ typedef struct {
     uint8_t a;
 }color;
 
-// Transparent black
-#define CLEAR_BACKGROUND ((color){0x00, 0x00, 0x00, 0x00})
+// https://colors.artyclick.com/color-names-dictionary/color-names/phthalo-blue-color
 // RGBA layout expected by Cocoa and NSBitmapImageRep
 // Primary Colors              .r    .g    .b    .a
-#define BLUE         ((color){0x00, 0x00, 0xFF, 0xFF})
-#define GREEN        ((color){0x00, 0xFF, 0x00, 0xFF})
-#define RED          ((color){0xFF, 0x00, 0x00, 0xFF})
+#define BLUE         ((color){0x0C, 0x10, 0x89, 0xFF}) // 000F89 Phthalo Blue
+#define GREEN        ((color){0x31, 0x85, 0x20, 0xFF}) // 318520 Medium Spring Green
+#define RED          ((color){0xCC, 0x00, 0x03, 0xFF}) // CC0003 Corso Red
 
+#define PINK         ((color){0xCE, 0x7A, 0xDF, 0xFF}) // CE7ADF Orchid
 // Grayscale
-#define WHITE        ((color){0xFF, 0xFF, 0xFF, 0xFF})
-#define BLACK        ((color){0x00, 0x00, 0x00, 0xFF})
+#define WHITE        ((color){0xFF, 0xFF, 0xFF, 0xFF}) // max white
+#define BLACK        ((color){0x00, 0x00, 0x00, 0xFF}) // opaque black
 #define GRAY         ((color){0x30, 0x30, 0x30, 0xFF})
 #define LIGHT_GRAY   ((color){0x80, 0x80, 0x80, 0xFF})
 #define DARK_GRAY    ((color){0x20, 0x20, 0x20, 0xFF})
 
 // Warm Tones
 #define ORANGE       ((color){0xFF, 0x80, 0x00, 0xFF})  // R: 255, G: 128, B: 0
-#define YELLOW       ((color){0xFF, 0xFF, 0x00, 0xFF})  // R: 255, G: 255, B: 0
+#define YELLOW       ((color){0xF6, 0xDB, 0x0E, 0xFF})  // F6DB0E Candlelight
 #define BROWN        ((color){0x80, 0x60, 0x20, 0xFF})  // R: 128, G: 96, B: 32
 #define GOLD         ((color){0xFF, 0xD7, 0x00, 0xFF})  // R: 255, G: 215, B: 0
 
@@ -94,6 +106,9 @@ typedef struct {
 #define PURPLE       ((color){0x80, 0x00, 0x80, 0xFF})  // R: 128, G: 0, B: 128
 #define NAVY         ((color){0x00, 0x00, 0x80, 0xFF})  // R: 0, G: 0, B: 128
 #define TEAL         ((color){0x00, 0x80, 0x80, 0xFF})  // R: 0, G: 128, B: 128
+
+// Background color - for now dark gray to fit dark mode - change if you want
+#define CLEAR_BACKGROUND DARK_GRAY// dark mode background
 
 #define color_to_u32(c) (((uint32_t)(c).a << 24) |      \
                          ((uint32_t)(c).b << 16) |      \
@@ -112,6 +127,7 @@ const char* color_to_string(color c);
 /* -------------------- Format Section -------------------- */
 
 #define PICASSO_MAX_DIM 1<<14 // 16,384X16,384 *4 is over 1GB - that is enough
+
 // Define BMP file header structures
 #pragma pack(push,1) //https://www.ibm.com/docs/no/zos/2.4.0?topic=descriptions-pragma-pack
 
@@ -163,46 +179,6 @@ typedef struct {
     uint8_t *pixels;
 } bmp;
 
-//typedef struct {
-//    struct {
-//        uint16_t file_type;                 // File type always ascii `BM` which is 0x4D42
-//        uint32_t file_size;                 // Size of the file (in bytes)
-//        uint16_t reserved1;                 // Reserved, always 0
-//        uint16_t reserved2;                 // Reserved, always 0
-//        uint32_t offset_data;               // Start position of pixel data (bytes from the beginning of the file)
-//    } fh;                                   // .fh = file header
-//    struct {
-//        uint32_t size;                      // Must be 12, 40, 56, 108 124
-//        int32_t width;
-//        int32_t height;                      // - this is 12!
-//        uint16_t planes;
-//        uint16_t bit_count;
-//        uint32_t compression;
-//        uint32_t size_image;
-//        int32_t x_pixels_per_meter;
-//        int32_t y_pixels_per_meter;
-//        uint32_t colors_used;
-//        uint32_t colors_important;          // - This is 40
-//
-//        // V4 fields
-//        uint32_t red_mask;
-//        uint32_t green_mask;
-//        uint32_t blue_mask;
-//        uint32_t alpha_mask;               // - This is 56!
-//        uint32_t cs_type;
-//        int32_t endpoints[9];               //  36 bytes here 96 - Unused (XYZ triples for color space)
-//        uint32_t gamma_red;                 //
-//        uint32_t gamma_green;
-//        uint32_t gamma_blue;             // 108
-//        // V5 additions
-//        uint32_t intent;
-//        uint32_t profile_data;
-//        uint32_t profile_size;
-//        uint32_t reserved;                  // This is 124
-//    } ih;                                   // .ih = info header
-//    uint8_t *pixels;
-//}BMP;
-
 /* PPM header is literal ascii - must be parsed
  * like a text file, not with headers.
  *  5036 0a33 3030 2032 3030 0a32 3535 0a
@@ -216,6 +192,8 @@ typedef struct {
 }PPM;
 
 #pragma pack(pop)
+
+
 picasso_image *picasso_alloc_image(int width, int height, int channels);
 /// @brief BMP functions
 picasso_image *picasso_load_bmp(const char *filename);

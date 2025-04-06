@@ -582,15 +582,45 @@ void picasso_fill_circle(picasso_backbuffer *bf, int x0, int y0, int radius, col
         }
     }
 }
+static inline picasso_rect picasso__make_circle_bounds(int x0, int y0, int radius)
+{
+    int overshoot = PICASSO_CIRCLE_DEFAULT_TOLERANCE + 1;
+
+    picasso_rect r = {
+        .x = x0 - radius - overshoot,
+        .y = y0 - radius - overshoot,
+        .width = (radius + overshoot) * 2 + 1,
+        .height = (radius + overshoot) * 2 + 1,
+    };
+    return r;
+}
+
+void picasso_fill_circle(picasso_backbuffer *bf, int x0, int y0, int radius, color c)
+{
+    // create a box around the circle that is slightly larger then the radius
+    // that is all we loop over, we clip to bounds
+    picasso_draw_bounds bounds = {0};
+    picasso_rect circle_box = picasso__make_circle_bounds(x0, y0, radius);
+    if(!picasso__clip_rect_to_bounds(bf, &circle_box, &bounds)) return;
+
+    uint32_t new_pixel = color_to_u32(c);
+
+    // a^2 + b^2 = c^2
+    for (int y = bounds.y0; y < bounds.y1; ++y) {
+        for (int x = bounds.x0; x < bounds.x1; ++x) {
+            int dx = x - x0;
+            int dy = y - y0;
+            if((dx*dx + dy*dy <= radius*radius + radius)){
+                uint32_t *cur_pixel = &bf->pixels[y * bf->width + x];
+                *cur_pixel = picasso__blend_pixel(*cur_pixel, new_pixel);
+            }
+        }
+    }
+}
 void picasso_draw_circle(picasso_backbuffer *bf, int x0, int y0, int radius,int thickness, color c)
 {
     picasso_draw_bounds bounds = {0};
-    picasso_rect circle_box = {
-        .x = x0 - radius, .y = y0 - radius,
-        .width = radius * 2,
-        .height = radius * 2
-    };
-
+    picasso_rect circle_box = picasso__make_circle_bounds(x0, y0, radius);
     if (!picasso__clip_rect_to_bounds(bf, &circle_box, &bounds)) return;
 
     uint32_t new_pixel = color_to_u32(c);
@@ -598,8 +628,8 @@ void picasso_draw_circle(picasso_backbuffer *bf, int x0, int y0, int radius,int 
     int outer = radius * radius;
     int inner = (radius - thickness) * (radius - thickness);
 
-    for (int y = bounds.y0; y < bounds.y1 + 2; ++y) {
-        for (int x = bounds.x0; x < bounds.x1 + 2; ++x) {
+    for (int y = bounds.y0; y < bounds.y1; ++y) {
+        for (int x = bounds.x0; x < bounds.x1; ++x) {
             int dx = x - x0;
             int dy = y - y0;
             int dist2 = dx * dx + dy * dy;
