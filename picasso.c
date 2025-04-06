@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "picasso.h"
 #include "logger.h"
@@ -145,8 +146,11 @@ static void skip_comments(FILE *f) {
     ungetc(c, f); // put the non-comment character back
 }
 
-PPM *picasso_load_ppm(const char *filename)
+picasso_image *picasso_load_ppm(const char *filename)
 {
+    picasso_image *image = NULL;
+    int width, height, maxval;
+
     FILE *f = fopen(filename, "rb");
     if (!f) {
         ERROR("Failed to open file: %s", filename);
@@ -157,13 +161,11 @@ PPM *picasso_load_ppm(const char *filename)
     char magic[3];
     if (fscanf(f, "%2s", magic) != 1 || strcmp(magic, "P6") != 0) {
         ERROR("Invalid PPM magic number: expected 'P6', got '%s'", magic);
-        fclose(f);
-        return NULL;
+        goto fail;
     }
     TRACE("Magic number OK: %s", magic);
 
     skip_comments(f);
-    int width, height, maxval;
 
     if (fscanf(f, "%d", &width) != 1) {
         ERROR("Failed to read width");
@@ -190,50 +192,33 @@ PPM *picasso_load_ppm(const char *filename)
         goto fail;
     }
 
+    image = picasso_alloc_image(width, height, 3);
+
     // Skip single whitespace after maxval before pixel data
     fgetc(f);
     TRACE("Skipped whitespace after maxval");
 
-    size_t pixels_size = width * height * 3;
-    unsigned char *pixels = picasso_malloc(pixels_size);
-    if (!pixels) {
-        ERROR("Out of memory allocating pixel buffer (%zu bytes)", pixels_size);
-        goto fail;
-    }
-    DEBUG("Allocated pixel buffer (%zu bytes)", pixels_size);
-
-    size_t read = fread(pixels, 1, pixels_size, f);
+    size_t pixels_size = (size_t)image->row_stride*image->height;
+    size_t read = fread(image->pixels, 1, pixels_size, f);
     if (read != pixels_size) {
         ERROR("Unexpected EOF: expected %zu bytes, got %zu", pixels_size, read);
-        picasso_free(pixels);
         goto fail;
     }
 
     TRACE("Read pixel data");
     fclose(f);
 
-    PPM *image = picasso_malloc(sizeof(PPM));
-    if (!image) {
-        ERROR("Out of memory allocating PPM struct");
-        picasso_free(pixels);
-        return NULL;
-    }
-
-    image->width = width;
-    image->height = height;
-    image->maxval = maxval;
-    image->pixels = pixels;
-
     INFO("Loaded PPM image: %dx%d", width, height);
     return image;
 
 fail:
     ERROR("Failed to parse PPM file: %s", filename);
+    if(image) picasso_free_image(image);
     fclose(f);
     return NULL;
 }
 
-int picasso_save_to_ppm(PPM *image, const char *file_path)
+int picasso_save_to_ppm(ppm *image, const char *file_path)
 {
     FILE *f = fopen(file_path, "wb");
     if (f == NULL) {
@@ -248,20 +233,12 @@ int picasso_save_to_ppm(PPM *image, const char *file_path)
     size_t total_pixels = image->width * image->height;
     TRACE("Saving %zu pixels", total_pixels);
 
-    for (size_t i = 0; i < total_pixels; i++) {
-        // Format: 0xAABBGGRR - skipping alpha
-        uint32_t pixel = image->pixels[i];
-        uint8_t bytes[3] = {
-            (pixel >>  0) & 0xFF, // Red
-            (pixel >>  8) & 0xFF, // Green
-            (pixel >> 16) & 0xFF  // Blue
-        };
-        size_t written = fwrite(bytes, sizeof(bytes), 1, f);
-        if (written != 1) {
-            ERROR("Failed to write pixel %zu", i);
-            fclose(f);
-            return -1;
-        }
+    size_t total_bytes = image->width * image->height * 3;
+    size_t written = fwrite(image->pixels, sizeof(uint8_t), total_bytes, f);
+    if (written != total_bytes) {
+        ERROR("Failed to write pixel data");
+        fclose(f);
+        return -1;
     }
 
     fclose(f);
@@ -273,15 +250,16 @@ picasso_image *picasso_alloc_image(int width, int height, int channels)
 {
     if (width <= 0 || height <= 0 || (channels != 3 && channels != 4)) return NULL;
 
-    picasso_image *img = malloc(sizeof(picasso_image));
+    picasso_image *img = picasso_malloc(sizeof(picasso_image));
     if (!img) return NULL;
 
     img->width = width;
     img->height = height;
     img->channels = channels;
-    img->pixels = malloc(width * height * channels);
+    img->row_stride = channels*width;
+    img->pixels = picasso_malloc(width * height * channels);
     if (!img->pixels) {
-        free(img);
+        picasso_free(img);
         return NULL;
     }
 
@@ -290,10 +268,9 @@ picasso_image *picasso_alloc_image(int width, int height, int channels)
 
 void picasso_free_image(picasso_image *img)
 {
-    if (img) {
-        free(img->pixels);
-        free(img);
-    }
+    if (img->pixels) picasso_free(img->pixels);
+    if (img)         picasso_free(img);
+
 }
 // SPRITES
 
@@ -560,28 +537,7 @@ void picasso_draw_rect(picasso_backbuffer *bf, picasso_rect *outer, int thicknes
     }
 }
 
-void picasso_fill_circle(picasso_backbuffer *bf, int x0, int y0, int radius, color c)
-{
-    picasso_draw_bounds bounds = {0};
-    picasso_rect circle_box = {
-        .x = x0-radius, .y = y0-radius,
-        .height = radius*2,
-        .width = radius*2
-    };
-    if(!picasso__clip_rect_to_bounds(bf, &circle_box, &bounds)) return;
-    uint32_t new_pixel = color_to_u32(c);
-    // a^2 + b^2 = c^2
-    for (int y = bounds.y0; y < bounds.y1 + 2; ++y) {
-        for (int x = bounds.x0; x < bounds.x1 + 2; ++x) {
-            int dx = x - x0;
-            int dy = y - y0;
-            if((dx*dx + dy*dy <= radius*radius + radius)){
-                uint32_t *cur_pixel = &bf->pixels[y * bf->width + x];
-                *cur_pixel = picasso__blend_pixel(*cur_pixel, new_pixel);
-            }
-        }
-    }
-}
+
 static inline picasso_rect picasso__make_circle_bounds(int x0, int y0, int radius)
 {
     int overshoot = PICASSO_CIRCLE_DEFAULT_TOLERANCE + 1;

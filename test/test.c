@@ -25,6 +25,15 @@ int main(int argc, char **argv)
     snprintf(output_name, sizeof(output_name), "test_%s", basename);
 
     picasso_image *img = picasso_load_bmp(filepath);
+    picasso_image *p_img = picasso_load_ppm("triangle.ppm");
+
+    ppm triangle = {
+        .width = p_img->width,
+        .height = p_img->height,
+        .maxval = 255,
+        .pixels = p_img->pixels,
+    };
+    picasso_save_to_ppm(&triangle, "triangel2.ppm");
     if (!img) {
         INFO("Failed to load BMP: %s", filepath);
         return -1;

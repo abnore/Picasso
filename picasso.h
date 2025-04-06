@@ -189,12 +189,11 @@ typedef struct {
     size_t height;
     size_t maxval;
     uint8_t *pixels;
-}PPM;
+}ppm;
 
 #pragma pack(pop)
 
 
-picasso_image *picasso_alloc_image(int width, int height, int channels);
 /// @brief BMP functions
 picasso_image *picasso_load_bmp(const char *filename);
 int picasso_save_to_bmp(bmp *image, const char *file_path, picasso_icc_profile profile);
@@ -202,8 +201,8 @@ bmp *picasso_create_bmp_from_rgba(int width, int height, int channels, const uin
 int picasso_save_rgba_to_bmp(const char *file_path, int width, int height, int channels, const uint8_t *pixels, picasso_icc_profile profile);
 
 /// @brief PPM functions
-PPM *picasso_load_ppm(const char *filename);
-int picasso_save_to_ppm(PPM *image, const char *file_path);
+picasso_image *picasso_load_ppm(const char *filename);
+int picasso_save_to_ppm(ppm *image, const char *file_path);
 
 
 /* ------------------- SpriteSheet Section -------------------- */
