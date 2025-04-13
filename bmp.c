@@ -99,15 +99,7 @@ char *_print_header_type(bmp_header_type type)
     }
 }
 
-// Goes over every pixel and lets you define a function body, where
-// you can manipulate each pixel individually
-#define foreach_pixel(img, body) do {                             \
-    for (int y = 0; y < (img)->height; ++y) {                     \
-        uint8_t *row = (img)->pixels + y * (img)->row_stride;     \
-        for (int x = 0; x < (img)->width; ++x) {                  \
-            uint8_t *pixels = row + x * (img)->channels;          \
-            do { body } while (0);                                \
-        }}} while (0)
+
 
 // This counts how many bits are set to 1 in the mask.
 static inline int mask_bit_count(uint32_t mask) {
@@ -288,7 +280,7 @@ int picasso_save_to_bmp(bmp *image, const char *file_path, picasso_icc_profile p
     return 0;
 }
 
-bmp *picasso_create_bmp_from_rgba(int width, int height, int channels, const uint8_t *pixel_data)
+bmp *picasso_create_bmp_from_rgba(uint8_t *pixel_data, int width, int height, int channels)
 {
     if (width <= 0 || height == 0 || !pixel_data) {
         ERROR("Invalid BMP creation params: %dx%d", width, height);
@@ -340,15 +332,16 @@ bmp *picasso_create_bmp_from_rgba(int width, int height, int channels, const uin
 
     // --- Fill each row ---
     for (int y = 0; y < abs_height; ++y) {
-        const uint8_t *src_row = pixel_data + y * row_stride;
-        uint8_t *dst_row = b->pixels + y * row_size;
+        const uint8_t *src_row = &pixel_data[y * row_stride];
+        uint8_t *dst_row = &b->pixels[y * row_size];
 
         for (int x = 0; x < width; ++x) {
-            const uint8_t *src = src_row + x * channels;
-            uint8_t *dst = dst_row + x * channels;
+            const uint8_t *src = &src_row[x * channels];
+            uint8_t *dst = &dst_row[x * channels];
 
             // Two operations in once, writing to, and
             // swapping RGBA -> BGRA
+            if(channels >= 1)
             dst[0] = src[2]; // B
             dst[1] = src[1]; // G
             dst[2] = src[0]; // R
@@ -494,6 +487,7 @@ static void picasso__parse_infoheader_fields(_bmp_load_info *bmp, FILE *fp, size
     }
 
     TRACE("bit_count     = %d", bmp->image.ih.bit_count);
+    TRACE("channels      = %d", bmp->channels);
     TRACE("compression   = %u", bmp->comp);
     TRACE("row_stride    = %u", bmp->row_stride);
     TRACE("row_size      = %u", bmp->row_size);
@@ -592,7 +586,10 @@ picasso_image *picasso_load_bmp(const char *filename)
     size_t read = 0;
 
     FILE *fp = fopen(filename, "rb");
-    if (!fp) return NULL;
+    if (!fp) {
+        ERROR("Failed loading %s", filename);
+        return NULL;
+    }
 
     bmp.type = picasso__validate_bmp(&read, &bmp, fp);
     if (bmp.type == BITMAP_INVALID) {
@@ -612,8 +609,8 @@ picasso_image *picasso_load_bmp(const char *filename)
     if (bmp.type >= BITMAPV4HEADER)     picasso__parse_v4_fields(&bmp);
     if (bmp.type >= BITMAPV5HEADER)     picasso__parse_v5_fields(&bmp);
 
-    TRACE("Header size: %zu (fh) + %d (ih) = %zu", sizeof(bmp.image.fh), bmp.type, sizeof(bmp.image.fh) + bmp.type);
-    TRACE("Actual header size %zu bytes", read);
+//    TRACE("Header size: %zu (fh) + %d (ih) = %zu", sizeof(bmp.image.fh), bmp.type, sizeof(bmp.image.fh) + bmp.type);
+//    TRACE("Actual header size %zu bytes", read);
 
     if(!(bmp.channels == 3 || bmp.channels == 4)) WARN("Only support bpp of 3 or 4");
 
@@ -626,12 +623,12 @@ picasso_image *picasso_load_bmp(const char *filename)
         img->pixels     = picasso_malloc(bmp.row_stride * bmp.height);
     }
 
-    uint8_t *row_buf = malloc(bmp.row_size);
+    uint8_t *row_buf = picasso_malloc(bmp.row_size);
 
     for (int y = 0; y < bmp.height; ++y) {
         if ((read = fread(row_buf, 1, bmp.row_size, fp)) != (size_t)bmp.row_size) {
             ERROR("Failed to read row %d", y);
-            free(row_buf);
+            picasso_free(row_buf);
             picasso_free(img->pixels);
             picasso_free(img);
             fclose(fp);
@@ -646,27 +643,26 @@ picasso_image *picasso_load_bmp(const char *filename)
     /* Finally done reading the file */
     fclose(fp);
 
+    bmp.set_all_alpha = true;
 
-    color pixel;
-    foreach_pixel(img,
-    {
+    color c;
+    foreach_pixel_u8(img, {
         if (bmp.comp == BI_BITFIELDS && bmp.channels == 4)
         {
-            decode_and_write_pixel_32bit(pixel, pixels); // Decode from 32-bit pixel using bitmasks
-            bmp.set_all_alpha = (!bmp.set_all_alpha && (pixels[3] != 0));
-
-        } else {
-            // Legacy BGR -> RGB swap
-            PICASSO_SWAP(pixels[0],pixels[2]);
+            decode_and_write_pixel_32bit(c, pixel); // Decode from 32-bit pixel using bitmasks
+            if (pixel[3] != 0) bmp.set_all_alpha = false;
+        } else
+        {
+            PICASSO_SWAP(pixel[0], pixel[2]); // BGR → RGB
         }
     });
 
     if (bmp.set_all_alpha && img->channels == 4)
     {
         TRACE("All alpha values were zero — setting to 0xff");
-        foreach_pixel(img, {
-                pixels[3] = 0xFF;
-        });
+        foreach_pixel_u8(img, {
+                pixel[3] = 0xFF;
+                });
     }
     return img;
 }

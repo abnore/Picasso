@@ -13,6 +13,9 @@ extern "C" {
 //----------------------------------------
 // Types
 //----------------------------------------
+typedef enum { NO_LOG = 0, LOG = 1 } log_mode;
+typedef enum { NO_COLORS = 0, LOG_COLORS = 1 } color_mode;
+typedef enum { STDERR_TO_TERMINAL = 0, STDERR_TO_LOG = 1 } stderr_mode;
 
 /**
  * @brief Defines the severity level of a log message.
@@ -65,16 +68,18 @@ extern uint32_t log_levels_enabled;
 /**
  * @brief Initializes the logger system.
  *
- * If `filepath` is NULL, logs go to stdout.
- * Automatically enables/disables color formatting based on isatty().
+ * If `filename` is NULL, logs go to stdout.
+ * Automatically enables or disables color formatting based on `isatty()`.
+ * Also internally parses the `LOG_LEVELS` environment variable.
  *
- * Also internally parses the LOG_LEVELS environment variable.
+ * @param enable_log        Use `LOG` to enable file logging, or `NO_LOG` for stdout only.
+ * @param enable_colors     Use `LOG_COLORS` to enable ANSI color output (stdout only), or `NO_COLORS` for plain text.
+ * @param stderr_behavior   Use `STDERR_TO_TERMINAL` to log errors to stderr,
+ *                          or `STDERR_TO_LOG` to redirect stderr into the log file.
  *
- * @param filepath       Path to log file or NULL for stdout
- * @param enable_colors  True to enable terminal colors (stdout only)
- * @return A `log_type` enum indicating output mode or failure
+ * @return A `log_type` enum indicating output mode or failure.
  */
-log_type init_log(const char* filepath, bool enable_colors);
+log_type init_log(log_mode enable_log, color_mode enable_colors, stderr_mode stderr_behavior);
 
 /**
  * @brief Gracefully shuts down the logger and closes files if needed.
