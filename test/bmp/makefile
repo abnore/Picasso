@@ -1,14 +1,14 @@
 CC      := clang
 CFLAGS  := -Wall -Wextra
-INCLUDE := -I. -I../ -I../icc_profiles
+INCLUDE := -I. -I../../ -I../../icc_profiles
 
 SRC := \
-     test.c \
-    ../picasso.c \
-    ../logger.c \
-    ../bmp.c \
-    ../icc_profiles/picasso_icc_profiles.c \
-    ../icc_profiles/picasso_icc_enum_to_string.c
+     test_bmp.c \
+   ../../picasso.c \
+   ../../logger.c \
+   ../../bmp.c \
+   ../../icc_profiles/picasso_icc_profiles.c \
+   ../../icc_profiles/picasso_icc_enum_to_string.c
 
 TARGET := test_bmp
 
