@@ -56,6 +56,12 @@ typedef struct {
     int x0, y0, x1, y1;
 } picasso_draw_bounds;
 
+typedef struct {
+    uint8_t *fp;   // Pointer to start of file buffer
+    uint8_t *ptr;  // Advancing read pointer
+    size_t size;         // Total size of the file buffer
+} picasso_reader;
+
 /* -------------------- Utility macros -------------------- */
 #define PICASSO_CIRCLE_DEFAULT_TOLERANCE 2
 #define PICASSO_MAX_DIM 1<<14 // 16,384X16,384 *4 is over 1GB - that is enough
@@ -224,17 +230,20 @@ void *picasso_malloc(size_t size);
 void * picasso_realloc(void *ptr, size_t size);
 
 /* --------- Binary Readers little endian utilities ----------- */
-uint8_t picasso_read_u8(const uint8_t *p);
-uint16_t picasso_read_u16_le(const uint8_t *p);
-uint32_t picasso_read_u32_le(const uint8_t *p);
-int32_t  picasso_read_s32_le(const uint8_t *p);
+uint8_t picasso_read_u8(picasso_reader *r);
+uint16_t picasso_read_u16_le(picasso_reader *r);
+uint16_t picasso_read_u16_be(picasso_reader *r);
+uint32_t picasso_read_u32_le(picasso_reader *r);
+uint32_t picasso_read_u32_be(picasso_reader *r);
+int32_t  picasso_read_s32_le(picasso_reader *r);
 
 /* -------------------- File Support -------------------- */
-void *picasso_read_entire_file(const char *path, size_t *out_size);
+picasso_reader *picasso_read_entire_file(const char *path);
 int picasso_write_file(const char *path, const void *data, size_t size);
 
 picasso_image *picasso_alloc_image(int width, int height, int channels);
 void picasso_free_image(picasso_image *img);
+void picasso_reader_free(picasso_reader *r);
 
 
 /* -------------------- Backbuffer Section -------------------- */

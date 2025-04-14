@@ -17,6 +17,7 @@ typedef enum { NO_LOG = 0, LOG = 1 } log_mode;
 typedef enum { NO_COLORS = 0, LOG_COLORS = 1 } color_mode;
 typedef enum { STDERR_TO_TERMINAL = 0, STDERR_TO_LOG = 1 } stderr_mode;
 
+#define LOG_DEFAULT NO_LOG, LOG_COLORS, STDERR_TO_LOG
 /**
  * @brief Defines the severity level of a log message.
  */

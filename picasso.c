@@ -24,54 +24,70 @@ void * picasso_realloc(void *ptr, size_t size){
     return realloc(ptr, size);
 }
 
-/* -------------------- Little Endian Byte Readers Utility -------------------- */
-uint8_t picasso_read_u8(const uint8_t *p) {
-    return p[0];
+/* -------------------- Little and Big Endian Byte Readers Utility -------------------- */
+uint8_t picasso_read_u8(picasso_reader *r) {
+    return *r->ptr++;
 }
 
-uint16_t picasso_read_u16_le(const uint8_t *p) {
-    uint16_t lo = picasso_read_u8(p);
-    uint16_t hi = picasso_read_u8(p + 1);
-    return lo | (hi << 8);
+uint16_t picasso_read_u16_le(picasso_reader *r) {
+    uint16_t b1 = picasso_read_u8(r);
+    uint16_t b2 = picasso_read_u8(r);
+    return b1 | (b2 << 8);
+}
+uint16_t picasso_read_u16_be(picasso_reader *r) {
+    uint16_t b1 = picasso_read_u8(r);
+    uint16_t b2 = picasso_read_u8(r);
+    return (b1 << 8) | b2;
 }
 
-uint32_t picasso_read_u32_le(const uint8_t *p) {
-    uint16_t lo = picasso_read_u16_le(p);
-    uint16_t hi = picasso_read_u16_le(p + 2);
+uint32_t picasso_read_u32_le(picasso_reader *r) {
+    uint16_t lo = picasso_read_u16_le(r);
+    uint16_t hi = picasso_read_u16_le(r);
     return (uint32_t)lo | ((uint32_t)hi << 16);
 }
-int32_t picasso_read_s32_le(const uint8_t *p) {
-    return (int32_t)picasso_read_u32_le(p);// safe because casting unsigned to signed preserves bit pattern
+uint32_t picasso_read_u32_be(picasso_reader *r) {
+    uint16_t lo = picasso_read_u16_be(r);
+    uint16_t hi = picasso_read_u16_be(r);
+    return (uint32_t)hi | ((uint32_t)lo << 16);
+}
+int32_t picasso_read_s32_le(picasso_reader *r) {
+    return (int32_t)picasso_read_u32_le(r);// safe because casting unsigned to signed preserves bit pattern
 }
 /* -------------------- File Support -------------------- */
 
-void *picasso_read_entire_file(const char *path, size_t *out_size)
+picasso_reader *picasso_read_entire_file(const char *path)
 {
-    long size;
-    void *buffer = NULL;
-    size_t read;
-
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
 
-    if (fseek(f, 0, SEEK_END) != 0  ||
-        (size = ftell(f)) < 0       ||
-        fseek(f, 0, SEEK_SET) != 0  ||
-        !(buffer = picasso_malloc((size_t)size))) {
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size <= 0) {
         fclose(f);
         return NULL;
     }
 
-    read = fread(buffer, 1, (size_t)size, f);
-    fclose(f);
-
-    if (read != (size_t)size) {
-        picasso_free(buffer);
+    uint8_t *buf = picasso_malloc(size);
+    if (!buf) {
+        fclose(f);
         return NULL;
     }
 
-    if (out_size) *out_size = (size_t)size;
-    return buffer;
+    if (fread(buf, 1, size, f) != (size_t)size) {
+        fclose(f);
+        picasso_free(buf);
+        return NULL;
+    }
+
+    fclose(f);
+
+    picasso_reader *r = picasso_malloc(sizeof(picasso_reader));
+    r->fp = buf;
+    r->ptr = buf;
+    r->size = size;
+    return r;
 }
 
 int picasso_write_file(const char *path, const void *data, size_t size)
@@ -84,7 +100,11 @@ int picasso_write_file(const char *path, const void *data, size_t size)
 
     return written == size;
 }
-
+void picasso_reader_free(picasso_reader *r) {
+    if (!r) return;
+    if (r->fp) picasso_free((void*)r->fp);
+    picasso_free(r);
+}
 /* -------------------- Color Section -------------------- */
 const char* color_to_string(color c)
 {
